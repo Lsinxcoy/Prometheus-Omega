@@ -177,20 +177,31 @@ class AntiEvolutionGate:
     3. APPLICATION: 它能应用来改进什么吗？
     4. CONSECUTIVE_GAIN: 它会产生连续改进吗？
     
-    任何失败 = 静默拒绝
+    可选第5前提（宪法要求）:
+    5. HUMAN_APPROVAL: 需要人类批准吗？（可选，宪法第4/14条）
     """
     
     _ATTEMPTED_NODE_TYPE = "_evolution_attempted"
     
-    def __init__(self, config: OmegaConfig | None = None, store=None):
+    def __init__(self, config: OmegaConfig | None = None, store=None,
+                 require_human_approval: bool = False):
+        """初始化
+        
+        Args:
+            config: Omega配置
+            store: 存储后端
+            require_human_approval: 是否需要人类批准（宪法第4/14条要求）
+        """
         self._config = config or OmegaConfig()
         self._store = store
         self._attempted: set[str] = set()
+        self._require_human_approval = require_human_approval
         self._stats = {
             "dedup_rejected": 0,
             "insight_rejected": 0,
             "application_rejected": 0,
             "consecutive_rejected": 0,
+            "human_approval_rejected": 0,
             "passed": 0
         }
     
@@ -238,11 +249,20 @@ class AntiEvolutionGate:
                 prerequisites_failed=["CONSECUTIVE_GAIN"],
             )
         
+        # Prerequisite 5: HUMAN_APPROVAL (宪法第4/14条 - 可选)
+        if self._require_human_approval:
+            return EvolutionCheckResult(
+                passed=False,
+                reason="HUMAN_APPROVAL: requires human approval (宪法第4/14条)",
+                prerequisites_failed=["HUMAN_APPROVAL"],
+                prerequisites_met=["DEDUP", "INSIGHT", "APPLICATION", "CONSECUTIVE_GAIN"],
+            )
+        
         self._attempted.add(hypothesis)
         self._stats["passed"] += 1
         return EvolutionCheckResult(
             passed=True,
-            reason="All 4 prerequisites passed",
+            reason="All prerequisites passed (Human-in-Loop satisfied)",
             prerequisites_met=["DEDUP", "INSIGHT", "APPLICATION", "CONSECUTIVE_GAIN"],
         )
     
