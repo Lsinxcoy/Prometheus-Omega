@@ -249,32 +249,100 @@ class AntiEvolutionGate:
     def _has_insight(self, hypothesis: str) -> bool:
         """检查是否有新见解
         
-        简化检测：有具体方案描述就算有insight
+        支持中英文检测
         """
-        # 要求：有具体词汇（不是模糊词）
-        insight_words = {"use", "add", "remove", "change", "improve", "reduce", 
-                        "gate", "algorithm", "method", "approach", "with", "and"}
+        # 英文有意义的词
+        insight_words_en = {"use", "add", "remove", "change", "improve", "reduce", 
+                        "gate", "algorithm", "method", "approach", "with", "and", "by"}
+        
+        # 中文有意义的词
+        insight_words_cn = {"使用", "添加", "删除", "改变", "改进", "算法", "方法", "途径",
+                          "优化", "降低", "提高", "通过", "利用", "采用", "取代", "替换"}
+        
         words = set(hypothesis.lower().split())
-        # 至少包含2个有意义的词
-        meaningful = words & insight_words
-        return len(meaningful) >= 2 or any(c.isdigit() for c in hypothesis)
+        
+        # 英文检测 - 至少包含2个有意义的词
+        meaningful_en = words & insight_words_en
+        if len(meaningful_en) >= 2:
+            return True
+        
+        # 中文检测 - 包含任何有意义的词
+        for word in insight_words_cn:
+            if word in hypothesis:
+                return True
+        
+        # 检查是否有数字（具体方案）
+        if any(c.isdigit() for c in hypothesis):
+            return True
+            
+        # 检查是否有技术符号
+        if any(c in hypothesis for c in ["O(", "→", "%", "倍", "次", "算法"]):
+            return True
+            
+        return False
     
     def _has_application(self, hypothesis: str) -> bool:
         """检查是否能应用
         
-        简化：包含动词或动作词就算可应用
+        支持中英文动作词检测
         """
-        action_words = {"use", "add", "remove", "change", "improve", "reduce",
+        # 英文动作词
+        action_words_en = {"use", "add", "remove", "change", "improve", "reduce",
                        "implement", "apply", "optimize", "enhance", "increase", "decrease",
-                       "gate", "to", "for", "by", "with"}
-        words = set(hypothesis.lower().split())
-        return bool(words & action_words)
+                       "gate", "to", "for", "by", "with", "reduce", "lower", "raise"}
+        
+        # 中文动作词
+        action_words_cn = {"使用", "添加", "删除", "改变", "改进", "减少", "增加", "优化",
+                         "降低", "提高", "实现", "应用", "利用", "通过", "将", "用", "把"}
+        
+        hypothesis_lower = hypothesis.lower()
+        words = set(hypothesis_lower.split())
+        
+        # 英文检测
+        if words & action_words_en:
+            return True
+        
+        # 中文检测
+        for word in action_words_cn:
+            if word in hypothesis:
+                return True
+        
+        # 检查是否有数学符号/表达式（技术方案）
+        if any(c in hypothesis for c in ["算法", "复杂度", "O(", "→", "降低", "提高", "优化"]):
+            return True
+            
+        return False
     
     def _has_consecutive_gain(self, hypothesis: str) -> bool:
-        """检查是否会产生连续收益"""
-        # 简化：要求包含递进词
-        compounding_words = ["compound", "chain", "stack", "cascade", "amplify", "bootstrap", "recursive"]
-        return any(word in hypothesis.lower() for word in compounding_words) or "each" in hypothesis.lower()
+        """检查是否会产生连续收益
+        
+        支持中英文检测
+        """
+        # 英文递进词
+        compounding_words_en = ["compound", "chain", "stack", "cascade", "amplify", 
+                               "bootstrap", "recursive", "each", "iterative", "cascade"]
+        
+        # 中文递进词
+        compounding_words_cn = ["递归", "迭代", "循环", "级联", "叠加", "累积", "复合",
+                               "连续", "递增", "倍增", "指数", "链式", "因果", "不断"]
+        
+        hypothesis_lower = hypothesis.lower()
+        
+        # 英文检测
+        for word in compounding_words_en:
+            if word in hypothesis_lower:
+                return True
+        
+        # 中文检测
+        for word in compounding_words_cn:
+            if word in hypothesis:
+                return True
+        
+        # 检查时间/递进关系
+        if any(c in hypothesis for c in ["每次", "持续", "逐步", "越来越", "不断"]):
+            return True
+            
+        return False
     
     @property
     def stats(self) -> dict:
