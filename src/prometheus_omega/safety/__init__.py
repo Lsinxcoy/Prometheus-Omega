@@ -1099,3 +1099,465 @@ def create_denylist() -> Denylist:
 
 def create_rate_limiter(max_per_minute: int = 60) -> RateLimiter:
     return RateLimiter(max_per_minute=max_per_minute)
+
+
+# ===== 来自XYZ系统 =====
+class EquilibriumGuard:
+    """S2: Nash equilibrium monitor with 3-level early warning."""
+
+    def __init__(self, config: ZConfig | None = None):
+        self._config = config or ZConfig()
+        self._fitness_history: deque[float] = deque(maxlen=200)
+        self._error_history: deque[float] = deque(maxlen=200)
+        self._population_history: deque[dict[str, float]] = deque(maxlen=200)
+        self._last_alert = AlertLevel.GREEN
+        self._stats = {"green": 0, "yellow": 0, "orange": 0, "red": 0,
+                       "interventions": 0}
+
+    def check(self, fitness: float, error_rate: float = 0.0,
+              populations: dict[str, float] | None = None) -> AlertLevel:
+        """Check system equilibrium. Returns current alert level.
+
+        All thresholds are configurable, zero-LLM.
+        """
+        self._fitness_history.append(fitness)
+        self._error_history.append(error_rate)
+        if populations:
+            self._population_history.append(populations)
+
+        level = AlertLevel.GREEN
+
+        # Check 1: Fitness convergence — not improving for N rounds
+        if self._is_fitness_stagnant():
+            level = max(level, AlertLevel.YELLOW)
+
+        # Check 2: Fitness declining — going backwards
+        if self._is_fitness_declining():
+            level = max(level, AlertLevel.ORANGE)
+
+        # Check 3: Error rate exceeding threshold
+        if error_rate > self._config.max_error_rate:
+            level = max(level, AlertLevel.ORANGE)
+
+        # Check 4: Error rate spiking
+        if self._is_error_rate_spiking():
+            level = max(level, AlertLevel.RED)
+
+        # Check 5: Population imbalance (one skill dominating)
+        if populations and self._is_population_imbalanced(populations):
+            level = max(level, AlertLevel.YELLOW)
+
+        # Check 6: Critical — fitness collapsed
+        if fitness < 0.1 and len(self._fitness_history) > 5:
+            level = max(level, AlertLevel.RED)
+
+        self._last_alert = level
+        self._stats[{
+            AlertLevel.GREEN: "green",
+            AlertLevel.YELLOW: "yellow",
+            AlertLevel.ORANGE: "orange",
+            AlertLevel.RED: "red",
+        }[level]] += 1
+
+        return level
+
+    def should_halt_evolution(self) -> bool:
+        """RED alert → halt all evolution immediately."""
+        return self._last_alert >= AlertLevel.RED
+
+    def should_pause_evolution(self) -> bool:
+        """ORANGE alert → pause evolution, allow diagnosis."""
+        return self._last_alert >= AlertLevel.ORANGE
+
+    def intervene(self) -> str | None:
+        """Suggest intervention based on alert level.
+
+        Returns intervention description or None if GREEN.
+        """
+        if self._last_alert == AlertLevel.GREEN:
+            return None
+
+        # RED alert should always suggest circuit breaker (most urgent response)
+        if self._last_alert >= AlertLevel.RED:
+            self._stats["interventions"] += 1
+            return "CIRCUIT_BREAK: Critical alert — open circuit breaker immediately"
+
+        if self._is_fitness_declining():
+            self._stats["interventions"] += 1
+            return "ROLLBACK: Fitness declining — revert last change"
+
+        if self._is_error_rate_spiking():
+            self._stats["interventions"] += 1
+            return "CIRCUIT_BREAK: Error rate spiking — open circuit breaker"
+
+        if self._is_fitness_stagnant():
+            self._stats["interventions"] += 1
+            return "REDIRECT: Fitness stagnant — try different strategy"
+
+        self._stats["interventions"] += 1
+        return "DIAGNOSE: Unknown issue — manual inspection needed"
+
+    def _is_fitness_stagnant(self, window: int = 5, threshold: float = 0.01) -> bool:
+        """Check if fitness hasn't improved in last N rounds."""
+        if len(self._fitness_history) < window:
+            return False
+        recent = list(self._fitness_history)[-window:]
+        return (max(recent) - min(recent)) < threshold
+
+    def _is_fitness_declining(self, window: int = 3) -> bool:
+        """Check if fitness is consistently declining."""
+        if len(self._fitness_history) < window:
+            return False
+        recent = list(self._fitness_history)[-window:]
+        return all(recent[i] > recent[i+1] for i in range(len(recent)-1))
+
+    def _is_error_rate_spiking(self, window: int = 3,
+                                factor: float = 3.0) -> bool:
+        """Check if error rate has spiked by factor compared to baseline."""
+        if len(self._error_history) < window * 2:
+            return False
+        # Use sliding window baseline: the period just before the recent window
+        baseline = sum(list(self._error_history)[-2*window:-window]) / window
+        recent = sum(list(self._error_history)[-window:]) / window
+        if baseline == 0:
+            return recent > 0.1
+        return recent / baseline > factor
+
+    def _is_population_imbalanced(self, populations: dict[str, float],
+                                   threshold: float = 0.8) -> bool:
+        """Check if one skill dominates (>threshold of total fitness)."""
+        total = sum(populations.values())
+        if total == 0:
+            return False
+        max_pop = max(populations.values())
+        return (max_pop / total) > threshold
+
+    @property
+    def alert_level(self) -> AlertLevel:
+        return self._last_alert
+
+    @property
+    def stats(self) -> dict:
+        return dict(self._stats)
+
+    @property
+    def fitness_history(self) -> list[float]:
+        return list(self._fitness_history)
+
+
+# ===== 来自XYZ系统 =====
+class RLPathologyDetector:
+    """S7: Detect RL pathologies in evolution dynamics."""
+
+    def __init__(self, config: ZConfig | None = None):
+        self._config = config or ZConfig()
+        self._reward_history: deque[float] = deque(maxlen=500)
+        self._action_distribution: dict[str, int] = {}
+        self._skill_history: dict[str, deque[float]] = {}
+        self._exploration_history: deque[float] = deque(maxlen=500)
+        self._pathologies: deque[dict] = deque(maxlen=100)
+
+    def observe(self, reward: float, action: str = "",
+                skills: dict[str, float] | None = None,
+                exploration_rate: float = 1.0) -> list[dict]:
+        """Observe a step and check for pathologies.
+
+        Returns list of detected pathologies (empty if healthy).
+        """
+        self._reward_history.append(reward)
+        if action:
+            self._action_distribution[action] = self._action_distribution.get(action, 0) + 1
+        if skills:
+            for skill, fitness in skills.items():
+                if skill not in self._skill_history:
+                    self._skill_history[skill] = deque(maxlen=500)
+                self._skill_history[skill].append(fitness)
+        self._exploration_history.append(exploration_rate)
+
+        detected = []
+        if self._check_reward_hacking():
+            detected.append({"pathology": "reward_hacking",
+                           "description": "Reward increasing without real improvement"})
+        if self._check_distribution_collapse():
+            detected.append({"pathology": "distribution_collapse",
+                           "description": "Actions converging to single strategy"})
+        if self._check_catastrophic_forgetting():
+            detected.append({"pathology": "catastrophic_forgetting",
+                           "description": "Previously strong skills degrading"})
+        if self._check_exploration_collapse():
+            detected.append({"pathology": "exploration_collapse",
+                           "description": "No new strategies being tried"})
+        if self._check_oscillation():
+            detected.append({"pathology": "oscillation",
+                           "description": "Alternating strategies without convergence"})
+        if self._check_policy_degeneration():
+            detected.append({"pathology": "policy_degeneration",
+                           "description": "Policy collapsed to near-deterministic"})
+
+        self._pathologies.extend(detected)
+        return detected
+
+    def _check_reward_hacking(self, window: int = 10) -> bool:
+        """Reward going up but skills not improving."""
+        if len(self._reward_history) < window * 2:
+            return False
+        rh = list(self._reward_history)
+        recent_reward = sum(rh[-window:]) / window
+        old_reward = sum(rh[-2*window:-window]) / window
+        # Reward increasing but no skill improvement
+        if recent_reward > old_reward * 1.2:
+            for skill, history in self._skill_history.items():
+                if len(history) >= window:
+                    hl = list(history)
+                    recent_skill = sum(hl[-window:]) / window
+                    old_skill = sum(hl[-2*window:-window]) / window if len(hl) >= 2*window else recent_skill
+                    if recent_skill < old_skill * 0.9:
+                        return True
+        return False
+
+    def _check_distribution_collapse(self, threshold: float = 0.8) -> bool:
+        """One action dominates > threshold of all actions."""
+        total = sum(self._action_distribution.values())
+        if total < 10:
+            return False
+        max_count = max(self._action_distribution.values())
+        return (max_count / total) > threshold
+
+    def _check_catastrophic_forgetting(self, threshold: float = 0.5) -> bool:
+        """Previously strong skill (fitness > 0.7) now below threshold."""
+        for skill, history in self._skill_history.items():
+            if len(history) >= 10:
+                hl = list(history)
+                peak = max(hl[:len(hl)//2])  # First half peak
+                recent = min(hl[-5:])  # Recent minimum
+                if peak > 0.7 and recent < threshold:
+                    return True
+        return False
+
+    def _check_exploration_collapse(self, threshold: float = 0.05) -> bool:
+        """Exploration rate dropped below threshold."""
+        if len(self._exploration_history) < 10:
+            return False
+        recent = sum(list(self._exploration_history)[-5:]) / 5
+        return recent < threshold
+
+    def _check_oscillation(self, window: int = 10) -> bool:
+        """Reward oscillating without convergence."""
+        if len(self._reward_history) < window:
+            return False
+        recent = list(self._reward_history)[-window:]
+        diffs = [recent[i+1] - recent[i] for i in range(len(recent)-1)]
+        sign_changes = sum(1 for i in range(len(diffs)-1)
+                         if (diffs[i] > 0) != (diffs[i+1] > 0))
+        # More than 60% sign changes = oscillation
+        return sign_changes > len(diffs) * 0.6
+
+    def _check_policy_degeneration(self, threshold: float = 0.95) -> bool:
+        """Policy becoming deterministic too early — entropy too low.
+
+        Measures action distribution entropy. If near-zero (highly concentrated),
+        the policy has collapsed to deterministic behavior prematurely.
+        """
+        total = sum(self._action_distribution.values())
+        if total < 20:  # Need enough observations
+            return False
+        n_actions = len(self._action_distribution)
+        if n_actions <= 1:
+            return True  # Only one action = fully degenerate
+        # Compute Shannon entropy
+        entropy = 0.0
+        for count in self._action_distribution.values():
+            p = count / total
+            if p > 0:
+                entropy -= p * math.log2(p)
+        # Maximum entropy = log2(n_actions)
+        max_entropy = math.log2(n_actions)
+        if max_entropy == 0:
+            return False
+        # Normalized entropy: 1 = uniform, 0 = deterministic
+        normalized = entropy / max_entropy
+        return normalized < (1 - threshold)  # Below 5% of max = degenerate
+
+    @property
+    def pathology_count(self) -> int:
+        return len(self._pathologies)
+
+    @property
+    def pathologies(self) -> list[dict]:
+        return list(self._pathologies)
+
+    @property
+    def is_healthy(self) -> bool:
+        """No pathologies detected in recent observations.
+
+        Checks whether the last N observations detected any pathologies,
+        not whether the entire history is empty (which would always return True).
+        
+        FIX: If pathologies is empty, return True (healthy).
+        If not empty, check if recent 5 have any pathology dict.
+        """
+        if not self._pathologies:
+            return True
+        
+        recent_pathologies = list(self._pathologies)[-5:]
+        has_recent_pathology = any(bool(p) for p in recent_pathologies)
+        return not has_recent_pathology
+
+
+# ===== 来自XYZ系统 =====
+class PlanValidator:
+    """S9: 3-layer plan validation."""
+
+    def __init__(self, config: ZConfig | None = None):
+        self._config = config or ZConfig()
+        self._stats = {"single_step_pass": 0, "single_step_fail": 0,
+                       "combination_pass": 0, "combination_fail": 0,
+                       "topology_pass": 0, "topology_fail": 0}
+
+    def validate(self, plan: dict) -> dict:
+        """Validate a plan at all 3 levels.
+
+        plan must contain:
+        - "steps": list of step dicts, each with "action" and "target"
+        - "dependencies": list of (step_i, step_j) pairs (step_j depends on step_i)
+
+        Returns dict with "valid" (bool) and "issues" (list of strings).
+        """
+        steps = plan.get("steps", [])
+        dependencies = plan.get("dependencies", [])
+
+        issues = []
+
+        # Layer 1: Single-step validation
+        step_issues = self._validate_single_step(steps)
+        issues.extend(step_issues)
+        if step_issues:
+            self._stats["single_step_fail"] += 1
+        else:
+            self._stats["single_step_pass"] += 1
+
+        # Layer 2: Combination validation
+        combo_issues = self._validate_combination(steps)
+        issues.extend(combo_issues)
+        if combo_issues:
+            self._stats["combination_fail"] += 1
+        else:
+            self._stats["combination_pass"] += 1
+
+        # Layer 3: Topology validation
+        topo_issues = self._validate_topology(steps, dependencies)
+        issues.extend(topo_issues)
+        if topo_issues:
+            self._stats["topology_fail"] += 1
+        else:
+            self._stats["topology_pass"] += 1
+
+        return {
+            "valid": len(issues) == 0,
+            "issues": issues,
+            "steps_validated": len(steps),
+        }
+
+    def _validate_single_step(self, steps: list[dict]) -> list[str]:
+        """Layer 1: Each step must have valid action and target."""
+        issues = []
+        valid_actions = {"modify", "add", "remove", "rename", "refactor",
+                         "optimize", "fix", "test", "document"}
+
+        for i, step in enumerate(steps):
+            action = step.get("action", "")
+            target = step.get("target", "")
+
+            if not action:
+                issues.append(f"Step {i}: missing action")
+            elif action not in valid_actions:
+                issues.append(f"Step {i}: invalid action '{action}'")
+
+            if not target:
+                issues.append(f"Step {i}: missing target")
+
+        return issues
+
+    def _validate_combination(self, steps: list[dict]) -> list[str]:
+        """Layer 2: Steps must not conflict."""
+        issues = []
+
+        # Check for conflicting targets (same target, opposite actions)
+        targets: dict[str, list[tuple[int, str]]] = {}
+        for i, step in enumerate(steps):
+            target = step.get("target", "")
+            action = step.get("action", "")
+            if target not in targets:
+                targets[target] = []
+            targets[target].append((i, action))
+
+        for target, actions in targets.items():
+            if len(actions) > 1:
+                # Check for add+remove on same target
+                action_names = {a for _, a in actions}
+                if "add" in action_names and "remove" in action_names:
+                    issues.append(f"Target '{target}': add and remove conflict")
+                if "modify" in action_names and len(actions) > 1:
+                    issues.append(f"Target '{target}': multiple modifications")
+
+        return issues
+
+    def _validate_topology(self, steps: list[dict],
+                           dependencies: list[tuple]) -> list[str]:
+        """Layer 3: Dependency graph must be a DAG (no cycles)."""
+        issues = []
+
+        if not steps:
+            issues.append("Plan has no steps")
+            return issues
+
+        if not dependencies:
+            return issues  # No dependencies = trivially valid DAG
+
+        # Build adjacency list
+        n = len(steps)
+        adj: dict[int, list[int]] = {i: [] for i in range(n)}
+        for dep_i, dep_j in dependencies:
+            if dep_i >= n or dep_j >= n:
+                issues.append(f"Dependency ({dep_i}, {dep_j}): step index out of range")
+                continue
+            adj[dep_i].append(dep_j)
+
+        # Detect cycles via DFS
+        WHITE, GRAY, BLACK = 0, 1, 2
+        color = {i: WHITE for i in range(n)}
+
+        def has_cycle(node: int) -> bool:
+            color[node] = GRAY
+            for neighbor in adj[node]:
+                if color[neighbor] == GRAY:
+                    return True  # Back edge = cycle
+                if color[neighbor] == WHITE and has_cycle(neighbor):
+                    return True
+            color[node] = BLACK
+            return False
+
+        for node in range(n):
+            if color[node] == WHITE:
+                if has_cycle(node):
+                    issues.append("Dependency cycle detected — plan is not a DAG")
+                    break
+
+        # Check for dead-end steps (no dependents and not final step)
+        has_dependent = set()
+        for dep_i, dep_j in dependencies:
+            has_dependent.add(dep_i)
+        # Build out-degree map
+        out_degree = {i: len(adj[i]) for i in range(n)}
+        for i in range(n):
+            if i not in has_dependent and i < n - 1 and out_degree[i] == 0:
+                # Intermediate step with no dependents and no outgoing edges — dead-end
+                issues.append(f"Step {i}: dead-end (no dependents and no outgoing edges)")
+
+        return issues
+
+    @property
+    def stats(self) -> dict:
+        return dict(self._stats)
+
+

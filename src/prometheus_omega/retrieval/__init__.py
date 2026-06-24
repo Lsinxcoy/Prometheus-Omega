@@ -544,3 +544,243 @@ def create_vector_search(dimension: int = 768) -> VectorSearch:
 
 def create_graph_traversal() -> GraphTraversal:
     return GraphTraversal()
+
+
+# ===== 来自XYZ系统 =====
+class HybridSearchEngine:
+    """M9: Three-channel hybrid search with RRF fusion + MMR diversity."""
+
+    def __init__(self, store: MinervaStore, config: ZConfig | None = None):
+        self._store = store
+        self._config = config or ZConfig()
+        self._rrf_k = 60  # RRF constant
+        self._mmr_lambda = 0.7  # MMR relevance vs diversity trade-off
+
+    def search(self, query: str, limit: int = 20,
+               branch: str = "main",
+               layers: list[MemoryLayer] | None = None,
+               query_embedding: list[float] | None = None) -> SearchResults:
+        """Execute three-channel parallel search and fuse results.
+
+        1. FTS5 full-text search
+        2. Vector search (cosine similarity on stored embeddings)
+        3. Graph neighborhood expansion (if graph edges exist)
+        4. RRF fusion
+        5. MMR diversity reranking
+        """
+        import time as _time
+        start = _time.time()
+
+        # ── Channel 1: FTS5 ──
+        fts_results = self._search_fts(query, limit * 3, branch)
+
+        # ── Channel 2: Vector (cosine similarity on stored embeddings) ──
+        vec_results = self._search_vector(query_embedding, limit * 3, branch)
+
+        # ── Channel 3: Graph neighborhood ──
+        graph_results = self._search_graph(fts_results, branch)
+
+        # ── RRF Fusion ──
+        channel_map = {"fts": fts_results, "graph": graph_results}
+        if vec_results:
+            channel_map["vector"] = vec_results
+        fused = self._rrf_fuse(channel_map, limit * 2)
+
+        # ── MMR Diversity Reranking ──
+        if fused and len(fused) > limit:
+            fused = self._mmr_rerank(fused, limit)
+
+        # ── Layer filtering ──
+        if layers is not None:
+            layer_set = set(int(l) for l in layers)
+            fused = [h for h in fused if int(h.node.layer) in layer_set]
+
+        elapsed_ms = (_time.time() - start) * 1000
+
+        return SearchResults(
+            hits=fused[:limit],
+            total=len(fused),
+            latency_ms=elapsed_ms,
+        )
+
+    def _search_fts(self, query: str, limit: int,
+                    branch: str) -> list[tuple[Node, float]]:
+        """Channel 1: FTS5 full-text search."""
+        try:
+            return self._store.search_fts(query, limit, branch)
+        except Exception:
+            return []
+
+    def _search_vector(self, query_embedding: list[float] | None,
+                       limit: int, branch: str) -> list[tuple[Node, float]]:
+        """Channel 2: Vector search via cosine similarity on stored embeddings.
+
+        Scans all nodes with non-empty embeddings, computes cosine similarity
+        with the query embedding, returns top-k results.
+
+        Falls back to empty list if no query embedding provided.
+        Complexity: O(n·d) where n=nodes with embeddings, d=dimension.
+        """
+        if not query_embedding:
+            return []
+
+        nodes = self._store.get_all_nodes(branch, limit=10000)
+        q_norm = self._l2_norm(query_embedding)
+        if q_norm < 1e-9:
+            return []
+
+        scored: list[tuple[Node, float]] = []
+        for node in nodes:
+            if not node.embedding:
+                continue
+            sim = self._cosine_similarity(query_embedding, node.embedding, q_norm)
+            if sim > 0.1:  # Threshold to avoid noise
+                scored.append((node, sim))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:limit]
+
+    @staticmethod
+    def _l2_norm(vec: list[float]) -> float:
+        """L2 norm of a vector."""
+        return math.sqrt(sum(x * x for x in vec))
+
+    @staticmethod
+    def _cosine_similarity(a: list[float], b: list[float],
+                           a_norm: float = 0.0) -> float:
+        """Cosine similarity between two vectors."""
+        if len(a) != len(b):
+            return 0.0
+        if a_norm < 1e-9:
+            a_norm = math.sqrt(sum(x * x for x in a))
+        b_norm = math.sqrt(sum(x * x for x in b))
+        if b_norm < 1e-9:
+            return 0.0
+        dot = sum(x * y for x, y in zip(a, b))
+        return dot / (a_norm * b_norm)
+
+    def _search_graph(self, seed_results: list[tuple[Node, float]],
+                      branch: str) -> list[tuple[Node, float]]:
+        """Channel 3: Graph neighborhood expansion.
+
+        For each FTS result, expand to its graph neighbors.
+        Neighbor nodes get a boost from their connection.
+        """
+        expanded: dict[str, tuple[Node, float]] = {}
+
+        for node, score in seed_results:
+            neighbors = self._store.get_neighbors(node.id, branch=branch)
+            for edge, neighbor in neighbors:
+                # Graph boost: connected nodes get score × weight × 0.5
+                graph_score = score * edge.weight * 0.5
+                if neighbor.id not in expanded or expanded[neighbor.id][1] < graph_score:
+                    expanded[neighbor.id] = (neighbor, graph_score)
+
+        return list(expanded.values())
+
+    def _rrf_fuse(self, channel_results: dict[str, list[tuple[Node, float]]],
+                  limit: int) -> list[SearchHit]:
+        """Reciprocal Rank Fusion.
+
+        RRF_score(doc) = Σ_channel 1 / (k + rank(doc, channel))
+
+        k=60 is the standard constant from Cormack et al.
+        """
+        # Build rank maps per channel
+        rank_maps: dict[str, dict[str, int]] = {}
+        all_node_ids: set[str] = set()
+
+        for channel_name, results in channel_results.items():
+            rank_map = {}
+            for rank, (node, _score) in enumerate(results, start=1):
+                rank_map[node.id] = rank
+                all_node_ids.add(node.id)
+            rank_maps[channel_name] = rank_map
+
+        # Compute RRF scores
+        node_cache: dict[str, Node] = {}
+        for channel_name, results in channel_results.items():
+            for node, _score in results:
+                if node.id not in node_cache:
+                    node_cache[node.id] = node
+
+        rrf_scores: list[tuple[str, float]] = []
+        for nid in all_node_ids:
+            score = 0.0
+            for channel_name, rank_map in rank_maps.items():
+                rank = rank_map.get(nid, 0)
+                if rank > 0:
+                    score += 1.0 / (self._rrf_k + rank)
+            rrf_scores.append((nid, score))
+
+        # Sort by RRF score descending
+        rrf_scores.sort(key=lambda x: x[1], reverse=True)
+
+        hits = []
+        for nid, score in rrf_scores[:limit]:
+            if nid in node_cache:
+                hits.append(SearchHit(node=node_cache[nid], score=score, source="rrf"))
+
+        return hits
+
+    def _mmr_rerank(self, hits: list[SearchHit],
+                    limit: int) -> list[SearchHit]:
+        """Maximal Marginal Relevance reranking for diversity.
+
+        MMR = argmax [λ·Sim(d_i, q) - (1-λ)·max(Sim(d_i, d_j)) for d_j in S]
+
+        λ=0.7: 70% relevance, 30% diversity.
+        """
+        if not hits:
+            return hits
+
+        # Simplified: use content length as proxy for similarity
+        # (real implementation would use embeddings)
+        selected: list[SearchHit] = [hits[0]]
+        remaining = list(hits[1:])
+
+        while len(selected) < limit and remaining:
+            best_idx = 0
+            best_mmr = -float("inf")
+
+            for i, candidate in enumerate(remaining):
+                # Relevance component
+                relevance = candidate.score
+
+                # Diversity component (penalty for similarity to already selected)
+                max_sim = 0.0
+                for sel in selected:
+                    sim = self._content_similarity(candidate.node, sel.node)
+                    if sim > max_sim:
+                        max_sim = sim
+
+                mmr = self._mmr_lambda * relevance - (1 - self._mmr_lambda) * max_sim
+                if mmr > best_mmr:
+                    best_mmr = mmr
+                    best_idx = i
+
+            selected.append(remaining.pop(best_idx))
+
+        return selected
+
+    @staticmethod
+    def _content_similarity(a: Node, b: Node) -> float:
+        """Simple content overlap similarity (Jaccard on word sets).
+
+        P-07: Empty-set Jaccard returns 1.0 (identical), not 0.0.
+        """
+        words_a = set(a.content.lower().split())
+        words_b = set(b.content.lower().split())
+
+        if not words_a and not words_b:
+            return 1.0  # P-07: both empty = identical
+
+        intersection = words_a & words_b
+        union = words_a | words_b
+
+        if not union:
+            return 1.0
+
+        return len(intersection) / len(union)
+
+

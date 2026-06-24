@@ -348,3 +348,646 @@ def create_ucb1(layers: List[str]) -> UCB1Bandit:
 
 def create_convergence_detector(**kwargs) -> ConvergenceDetector:
     return ConvergenceDetector(**kwargs)
+
+
+# ===== 来自XYZ系统 =====
+class ASTMutation:
+    """E1: AST-safe code mutation engine."""
+
+    MUTATION_TYPES = [
+        "rename", "log_add", "error_handle", "type_annotate",
+        "extract_const", "simplify_cond", "doc_add", "assert_add",
+    ]
+
+    def __init__(self, config: ZConfig | None = None):
+        self._config = config or ZConfig()
+        self._stats = {m: 0 for m in self.MUTATION_TYPES}
+        self._stats["failed"] = 0
+
+    def mutate(self, code: str, mutation_type: str = "rename",
+               **kwargs) -> str | None:
+        """Apply a single mutation to code.
+
+        Returns mutated code, or None if mutation fails (syntax-safe: never returns invalid code).
+        """
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            self._stats["failed"] += 1
+            return None
+
+        try:
+            if mutation_type == "rename":
+                old_name = kwargs.get("old_name", "x")
+                new_name = kwargs.get("new_name", "y")
+                tree = self._rename(tree, old_name, new_name)
+            elif mutation_type == "log_add":
+                tree = self._add_logging(tree)
+            elif mutation_type == "error_handle":
+                tree = self._add_error_handling(tree)
+            elif mutation_type == "extract_const":
+                tree = self._extract_constants(tree)
+            elif mutation_type == "doc_add":
+                tree = self._add_docstrings(tree)
+            elif mutation_type == "assert_add":
+                tree = self._add_assertions(tree)
+            elif mutation_type == "type_annotate":
+                tree = self._add_type_annotations(tree)
+            elif mutation_type == "simplify_cond":
+                tree = self._simplify_conditions(tree)
+            else:
+                return None
+
+            # Verify the mutation produces valid Python
+            result = ast.unparse(tree)
+            ast.parse(result)  # Round-trip verify
+            self._stats[mutation_type] += 1
+            return result
+
+        except Exception:
+            self._stats["failed"] += 1
+            return None
+
+    def safe_mutate(self, code: str, mutation_type: str = "rename",
+                    **kwargs) -> str:
+        """Mutate with fallback: if mutation fails, return original code."""
+        result = self.mutate(code, mutation_type, **kwargs)
+        return result if result is not None else code
+
+    def _rename(self, tree: ast.AST, old_name: str, new_name: str) -> ast.AST:
+        """Rename all occurrences of old_name to new_name."""
+        tree = copy.deepcopy(tree)
+        class Renamer(ast.NodeTransformer):
+            def visit_Name(self, node):
+                if node.id == old_name:
+                    node.id = new_name
+                return node
+            def visit_FunctionDef(self, node):
+                if node.name == old_name:
+                    node.name = new_name
+                self.generic_visit(node)
+                return node
+            def visit_arg(self, node):
+                if node.arg == old_name:
+                    node.arg = new_name
+                return node
+        return Renamer().visit(tree)
+
+    def _add_logging(self, tree: ast.AST) -> ast.AST:
+        """Add logging to function entries."""
+        tree = copy.deepcopy(tree)
+        class LogAdder(ast.NodeTransformer):
+            def visit_FunctionDef(self, node):
+                log_stmt = ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="logger", ctx=ast.Load()),
+                            attr="info",
+                            ctx=ast.Load(),
+                        ),
+                        args=[ast.Constant(value=f"Entering {node.name}")],
+                        keywords=[],
+                    )
+                )
+                node.body.insert(0, log_stmt)
+                return node
+        return LogAdder().visit(tree)
+
+    def _add_error_handling(self, tree: ast.AST) -> ast.AST:
+        """Wrap function bodies in try/except."""
+        tree = copy.deepcopy(tree)
+        class ErrorHandler(ast.NodeTransformer):
+            def visit_FunctionDef(self, node):
+                original_body = node.body
+                try_body = original_body
+                except_body = [
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="logger", ctx=ast.Load()),
+                                attr="error",
+                                ctx=ast.Load(),
+                            ),
+                            args=[ast.Call(
+                                func=ast.Name(id="str", ctx=ast.Load()),
+                                args=[ast.Name(id="e", ctx=ast.Load())],
+                                keywords=[],
+                            )],
+                            keywords=[],
+                        )
+                    )
+                ]
+                try_node = ast.Try(
+                    body=try_body,
+                    handlers=[ast.ExceptHandler(
+                        type=ast.Name(id="Exception", ctx=ast.Load()),
+                        name="e",
+                        body=except_body,
+                    )],
+                    orelse=[],
+                    finalbody=[],
+                )
+                node.body = [try_node]
+                return node
+        return ErrorHandler().visit(tree)
+
+    def _extract_constants(self, tree: ast.AST) -> ast.AST:
+        """Extract magic numbers to named constants."""
+        tree = copy.deepcopy(tree)
+        class ConstExtractor(ast.NodeTransformer):
+            def __init__(self):
+                self.constants = {}
+                self.counter = 0
+
+            def visit_Constant(self, node):
+                if isinstance(node.value, (int, float)) and node.value not in (0, 1, -1, True, False):
+                    if node.value not in self.constants:
+                        self.counter += 1
+                        name = f"CONST_{self.counter}"
+                        self.constants[node.value] = name
+                    return ast.Name(id=self.constants[node.value], ctx=ast.Load())
+                return node
+        transformer = ConstExtractor()
+        tree = transformer.visit(tree)
+        return tree
+
+    def _add_docstrings(self, tree: ast.AST) -> ast.AST:
+        """Add docstrings to functions without them."""
+        tree = copy.deepcopy(tree)
+        class DocAdder(ast.NodeTransformer):
+            def visit_FunctionDef(self, node):
+                # Check if first statement is a docstring
+                if (node.body and isinstance(node.body[0], ast.Expr)
+                        and isinstance(node.body[0].value, ast.Constant)
+                        and isinstance(node.body[0].value.value, str)):
+                    return node  # Already has docstring
+                docstring = ast.Expr(value=ast.Constant(value=f"TODO: Document {node.name}"))
+                node.body.insert(0, docstring)
+                return node
+        return DocAdder().visit(tree)
+
+    def _add_assertions(self, tree: ast.AST) -> ast.AST:
+        """Add assertions at function entries for argument validation."""
+        tree = copy.deepcopy(tree)
+        class AssertAdder(ast.NodeTransformer):
+            def visit_FunctionDef(self, node):
+                for arg in node.args.args:
+                    assert_stmt = ast.Assert(
+                        test=ast.Compare(
+                            left=ast.Name(id=arg.arg, ctx=ast.Load()),
+                            ops=[ast.IsNot()],
+                            comparators=[ast.Constant(value=None)],
+                        ),
+                        msg=ast.Constant(value=f"{arg.arg} must not be None"),
+                    )
+                    node.body.insert(0, assert_stmt)
+                return node
+        return AssertAdder().visit(tree)
+
+    def _add_type_annotations(self, tree: ast.AST) -> ast.AST:
+        """Add 'Any' type annotations to untyped function arguments."""
+        tree = copy.deepcopy(tree)
+        class TypeAnnotator(ast.NodeTransformer):
+            def visit_FunctionDef(self, node):
+                for arg in node.args.args:
+                    if arg.annotation is None:
+                        arg.annotation = ast.Name(id="Any", ctx=ast.Load())
+                return node
+        return TypeAnnotator().visit(tree)
+
+    def _simplify_conditions(self, tree: ast.AST) -> ast.AST:
+        """Simplify nested if/else patterns.
+
+        Strategy: Flatten `if A: if B: X` → `if A and B: X`.
+        Also flatten single-branch else-of-if.
+        """
+        class Simplifier(ast.NodeTransformer):
+            simplified = False
+
+            def visit_If(self, node):
+                # First, recursively simplify children
+                self.generic_visit(node)
+
+                # Pattern: if A: if B: body → if A and B: body
+                if (len(node.body) == 1
+                        and isinstance(node.body[0], ast.If)
+                        and not node.body[0].orelse):
+                    inner = node.body[0]
+                    combined_test = ast.BoolOp(
+                        op=ast.And(),
+                        values=[node.test, inner.test],
+                    )
+                    ast.copy_location(combined_test, node.test)
+                    new_if = ast.If(
+                        test=combined_test,
+                        body=inner.body,
+                        orelse=node.orelse,
+                    )
+                    ast.copy_location(new_if, node)
+                    self.simplified = True
+                    return new_if
+
+                # Pattern: if A: X; else: if B: Y → if A: X; elif B: Y
+                if (len(node.orelse) == 1
+                        and isinstance(node.orelse[0], ast.If)):
+                    inner = node.orelse[0]
+                    node.orelse = [inner]
+                    # Already an elif in practice (ast represents elif as If in orelse)
+
+                return node
+
+        simplifier = Simplifier()
+        new_tree = simplifier.visit(tree)
+        if simplifier.simplified:
+            self._stats["simplifications"] += 1
+        return new_tree
+
+    @property
+    def stats(self) -> dict:
+        return dict(self._stats)
+
+
+# ===== 来自XYZ系统 =====
+class EvalDrivenEngine:
+    """E2: 7-step evaluation-driven evolution pipeline."""
+
+    def __init__(self, config: ZConfig | None = None,
+                 store: 'MinervaStore | None' = None):
+        self._config = config or ZConfig()
+        self._gate = AntiEvolutionGate(self._config, store=store)
+        self._iron_law = VerificationIronLaw(self._config)
+        self._history: list[dict] = []
+
+    def evolve(self, context: dict) -> EvolutionOutcome:
+        """Run 7-step evolution pipeline.
+
+        context must contain:
+        - "weakness": what to improve (str)
+        - "current_code": the code to evolve (str)
+        - "eval_fn": callable that returns fitness score (0-1)
+        - "apply_fn": callable that applies the change (optional)
+        """
+        weakness = context.get("weakness", "")
+        current_code = context.get("current_code", "")
+        eval_fn = context.get("eval_fn")
+        apply_fn = context.get("apply_fn")
+
+        if not weakness or not eval_fn:
+            return EvolutionOutcome(applied=False, reason="Missing weakness or eval_fn")
+
+        # ── Iron Law 2: AntiEvolutionGate ──
+        gate_result = self._gate.check(
+            hypothesis=weakness,
+            existing_solutions=self._get_existing_solutions(),
+        )
+        if not gate_result.passed:
+            return EvolutionOutcome(
+                applied=False,
+                reason=f"AntiEvolutionGate denied: {gate_result.reason}",
+            )
+
+        # ── Step 1: GRILL ──
+        grill_answers = self._grill(weakness, current_code)
+
+        # ── Step 2: DEFINE_EVAL ──
+        eval_definition = self._define_eval(weakness, grill_answers)
+
+        # ── Step 3: WRITE_PLAN ──
+        plan = self._write_plan(weakness, grill_answers, eval_definition)
+
+        # ── Step 4: EXECUTE ──
+        fitness_before = eval_fn(current_code)
+        modified_code = self._execute_plan(current_code, plan)
+
+        # ── Step 5: GRADE (Iron Law 3: VerificationIronLaw) ──
+        fitness_after = eval_fn(modified_code)
+
+        # Determine direction from eval definition
+        direction = eval_definition.get("direction", "maximize")
+
+        # Verify improvement
+        verification = self._iron_law.verify(
+            claim=f"Change improves {weakness}",
+            evidence={"before": fitness_before, "after": fitness_after},
+            threshold=self._config.pass_k_threshold,
+            direction=direction,
+        )
+        if not verification.passed:
+            return EvolutionOutcome(
+                applied=False,
+                reason=f"VerificationIronLaw denied: {verification.reason}",
+                fitness_before=fitness_before,
+                fitness_after=fitness_after,
+            )
+
+        # ── Step 6: APPLY ──
+        direction = context.get("direction", "maximize")
+        if direction == "minimize":
+            should_apply = fitness_after < fitness_before
+        else:
+            should_apply = fitness_after > fitness_before
+
+        if should_apply:
+            if apply_fn:
+                apply_fn(modified_code)
+
+            # ── Step 7: COMPILE ──
+            compiled = fitness_after > self._config.compile_fitness_threshold
+
+            outcome = EvolutionOutcome(
+                applied=True,
+                reason=f"Improved {weakness}: {fitness_before:.3f} → {fitness_after:.3f}",
+                fitness_before=fitness_before,
+                fitness_after=fitness_after,
+                compilation=compiled,
+            )
+
+            self._history.append({
+                "weakness": weakness,
+                "fitness_before": fitness_before,
+                "fitness_after": fitness_after,
+                "applied": True,
+                "compiled": compiled,
+                "timestamp": time.time(),
+            })
+
+            return outcome
+
+        return EvolutionOutcome(
+            applied=False,
+            reason=f"No improvement: {fitness_before:.3f} → {fitness_after:.3f}",
+            fitness_before=fitness_before,
+            fitness_after=fitness_after,
+        )
+
+    def _grill(self, weakness: str, code: str) -> dict:
+        """Step 1: 4 questions about what to improve.
+
+        Analyzes the weakness string and code to produce structured insights.
+        Zero-LLM: uses heuristic analysis, not model calls.
+        """
+        # Parse weakness into components
+        parts = weakness.lower().split()
+        
+        # Identify category from keywords
+        categories = {
+            "search": "retrieval_quality",
+            "accuracy": "precision",
+            "speed": "performance",
+            "memory": "memory_efficiency",
+            "consolidation": "knowledge_quality",
+            "retention": "memory_retention",
+            "utilization": "resource_efficiency",
+            "relevance": "result_quality",
+        }
+        category = "general"
+        for keyword, cat in categories.items():
+            if keyword in parts:
+                category = cat
+                break
+
+        # Analyze code structure for evidence
+        code_lines = code.splitlines() if code else []
+        code_size = len(code_lines)
+        has_loops = any('for ' in l or 'while ' in l for l in code_lines)
+        has_error_handling = any('try:' in l or 'except' in l for l in code_lines)
+        has_caching = any('cache' in l.lower() for l in code_lines)
+
+        # Build structured GRILL answers
+        evidence_parts = []
+        if code_size > 50:
+            evidence_parts.append(f"code is {code_size} lines (large)")
+        if not has_error_handling:
+            evidence_parts.append("no error handling detected")
+        if not has_caching:
+            evidence_parts.append("no caching detected")
+        evidence = "; ".join(evidence_parts) if evidence_parts else "observed in current behavior"
+
+        # Generate improvement target
+        improvement_map = {
+            "retrieval_quality": "increase search recall and precision",
+            "precision": "reduce false positive rate",
+            "performance": "reduce latency of hot path",
+            "memory_efficiency": "improve knowledge consolidation ratio",
+            "knowledge_quality": "increase semantic node proportion",
+            "memory_retention": "improve episodic-to-semantic promotion rate",
+            "resource_efficiency": "increase recall/remember ratio",
+            "result_quality": "improve ranking relevance score",
+            "general": f"improve {weakness}",
+        }
+
+        # Suggest simplest change based on analysis
+        change_map = {
+            "retrieval_quality": "add hybrid search weight tuning",
+            "precision": "add result filtering threshold",
+            "performance": "add caching for frequent queries",
+            "memory_efficiency": "add consolidation trigger threshold",
+            "knowledge_quality": "add gravity-based promotion",
+            "memory_retention": "adjust Weibull decay parameters",
+            "resource_efficiency": "add prefetch for common patterns",
+            "result_quality": "add MMR diversity filtering",
+            "general": f"address {weakness} directly",
+        }
+
+        return {
+            "weakness": weakness,
+            "category": category,
+            "evidence": evidence,
+            "improvement_target": improvement_map.get(category, f"improve {weakness}"),
+            "simplest_change": change_map.get(category, f"address {weakness} directly"),
+        }
+
+    def _define_eval(self, weakness: str, grill: dict) -> dict:
+        """Step 2: Define how to measure improvement.
+
+        Maps weakness category to concrete evaluation metrics.
+        """
+        category = grill.get("category", "general")
+
+        metric_map = {
+            "retrieval_quality": {"metric": "recall@k", "direction": "maximize", "threshold": 0.8},
+            "precision": {"metric": "precision@k", "direction": "maximize", "threshold": 0.9},
+            "performance": {"metric": "latency_p95_ms", "direction": "minimize", "threshold": 100},
+            "memory_efficiency": {"metric": "consolidation_ratio", "direction": "maximize", "threshold": 0.6},
+            "knowledge_quality": {"metric": "semantic_node_ratio", "direction": "maximize", "threshold": 0.3},
+            "memory_retention": {"metric": "promotion_rate", "direction": "maximize", "threshold": 0.2},
+            "resource_efficiency": {"metric": "recall_remember_ratio", "direction": "maximize", "threshold": 0.5},
+            "result_quality": {"metric": "mmr_diversity_score", "direction": "maximize", "threshold": 0.4},
+            "general": {"metric": weakness, "direction": "maximize", "threshold": self._config.pass_k_threshold},
+        }
+
+        result = metric_map.get(category, metric_map["general"]).copy()
+        result["weakness"] = weakness
+        result["category"] = category
+        return result
+
+    def _write_plan(self, weakness: str, grill: dict, eval_def: dict) -> dict:
+        """Step 3: Write a concrete change plan.
+
+        Maps GRILL insights + eval definition to a structured mutation plan.
+        """
+        category = grill.get("category", "general")
+        improvement = grill.get("improvement_target", "")
+        simplest = grill.get("simplest_change", "")
+        metric = eval_def.get("metric", weakness)
+
+        # Map category to meaningful AST mutation strategy
+        # FIX: Use strategies that produce substantive code changes,
+        # not cosmetic ones (log_add/doc_add are shallow).
+        # rename → changes function/variable semantics
+        # extract_const → makes magic numbers explicit
+        # simplify_cond → reduces nesting complexity
+        # error_handle → adds robustness
+        strategy_map = {
+            "retrieval_quality": "simplify_cond",    # Simplify nested retrieval logic
+            "precision": "extract_const",            # Extract threshold constants for tuning
+            "performance": "extract_const",          # Extract magic numbers for optimization
+            "memory_efficiency": "error_handle",     # Add error handling for robustness
+            "knowledge_quality": "rename",            # Rename for semantic clarity
+            "memory_retention": "simplify_cond",     # Simplify retention logic
+            "resource_efficiency": "extract_const",  # Extract config constants
+            "result_quality": "assert_add",          # Add assertions for quality gates
+            "general": "simplify_cond",
+        }
+
+        strategy = strategy_map.get(category, "log_add")
+
+        return {
+            "target": weakness,
+            "category": category,
+            "change_type": "ast_mutation",
+            "strategy": strategy,
+            "description": simplest,
+            "improvement_target": improvement,
+            "metric": metric,
+            "threshold": eval_def.get("threshold", 0.5),
+        }
+
+    def _execute_plan(self, code: str, plan: dict) -> str:
+        """Step 4: Execute the plan via AST mutation.
+
+        Uses ASTMutation for syntax-safe code modification.
+        Falls back to returning code unchanged if mutation fails.
+        
+        FIX: Pass mutation parameters from plan to mutator for substantive changes.
+        """
+        if not code:
+            return code
+
+        strategy = plan.get("strategy", "simplify_cond")
+        
+        # Extract mutation parameters from plan
+        params = {}
+        if plan.get("change_type") == "ast_mutation":
+            # Pass relevant parameters based on strategy
+            if strategy == "rename":
+                # Could extract old_name/new_name from plan if available
+                params = {"old_name": "x", "new_name": "improved_x"}
+            elif strategy == "extract_const":
+                params = {}  # ASTMutation._extract_constants handles this automatically
+
+        try:
+            from prometheus_z.evolution.ast_mutation import ASTMutation
+            mutator = ASTMutation(self._config)
+            result = mutator.mutate(code, strategy, **params)
+            if result is not None:
+                return result
+        except Exception:
+            pass
+
+        # Fallback: return code unchanged (mutation not applicable)
+        return code
+
+    def _get_existing_solutions(self) -> list[str]:
+        """Get list of existing attempted solutions for dedup check."""
+        return [h["weakness"] for h in self._history]
+
+    @property
+    def history(self) -> list[dict]:
+        return list(self._history)
+
+    @property
+    def success_rate(self) -> float:
+        if not self._history:
+            return 0.0
+        applied = sum(1 for h in self._history if h.get("applied"))
+        return applied / len(self._history)
+
+
+# ===== 来自XYZ系统 =====
+class CompileToRule:
+    """E11: Compile high-fitness patterns to deterministic rules."""
+
+    def __init__(self, store: MinervaStore, config: ZConfig | None = None):
+        self._store = store
+        self._config = config or ZConfig()
+        self._compiled_rules: dict[str, dict] = {}
+
+    def compile(self, pattern: Node, fitness: float,
+                branch: str = "main") -> Node | None:
+        """Compile a pattern to a deterministic rule if fitness > threshold.
+
+        Args:
+            pattern: The pattern to compile
+            fitness: Current fitness score (0-1)
+            branch: Memory branch
+
+        Returns:
+            The compiled rule node, or None if fitness too low.
+        """
+        if fitness < self._config.compile_fitness_threshold:
+            return None  # Not ready for compilation
+
+        # Create a deterministic rule node
+        rule_fingerprint = hashlib.md5(
+            pattern.content.encode()
+        ).hexdigest()
+
+        rule = Node(
+            content=f"RULE: {pattern.content} (fitness={fitness:.3f})",
+            type=NodeType.AVOID_RULE,  # Rules are deterministic
+            utility=5.0,  # Max utility for compiled rules
+            layer=2,  # SEMANTIC — permanent
+            trust=TrustLevel.VERIFIED,
+            reinforce_count=pattern.reinforce_count,
+            surprise=0.0,  # No surprise — deterministic
+            parent_id=pattern.id,
+            branch=branch,
+            custom_type="compiled_rule",
+        )
+
+        rule_id = self._store._system_insert(rule, reason="compile_to_rule")
+
+        # Track in compiled rules registry
+        self._compiled_rules[rule_fingerprint] = {
+            "rule_id": rule_id,
+            "pattern_id": pattern.id,
+            "fitness": fitness,
+            "content": rule.content,
+        }
+
+        return rule
+
+    def is_compiled(self, pattern_id: str) -> bool:
+        """Check if a pattern has been compiled to a rule."""
+        for rule_info in self._compiled_rules.values():
+            if rule_info["pattern_id"] == pattern_id:
+                return True
+        return False
+
+    def get_rule(self, pattern_id: str) -> dict | None:
+        """Get the compiled rule for a pattern."""
+        for rule_info in self._compiled_rules.values():
+            if rule_info["pattern_id"] == pattern_id:
+                return rule_info
+        return None
+
+    @property
+    def compiled_count(self) -> int:
+        return len(self._compiled_rules)
+
+    @property
+    def compiled_rules(self) -> dict[str, dict]:
+        return dict(self._compiled_rules)
+
+

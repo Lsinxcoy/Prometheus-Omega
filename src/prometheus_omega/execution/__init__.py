@@ -218,3 +218,187 @@ def create_retryable_dag(max_retries: int = 3) -> RetryableDAG:
 
 def create_monitored_dag() -> MonitoredDAG:
     return MonitoredDAG()
+
+
+# ===== 来自XYZ系统 =====
+class ParallelDAGExecutor(DAGExecutor):
+    """并行DAG执行器 - 支持并行执行独立节点"""
+    
+    def __init__(self, version: str = "1.0.0", max_parallel: int = 4):
+        super().__init__(version)
+        self.max_parallel = max_parallel
+        self._parallel_groups: List[List[str]] = []
+    
+    def _compute_parallel_groups(self) -> List[List[str]]:
+        """计算可并行执行的节点组"""
+        # 简化：按层级分组
+        in_degree = {node_id: 0 for node_id in self.nodes}
+        for from_id, to_id in self.edges:
+            in_degree[to_id] += 1
+        
+        groups = []
+        remaining = set(self.nodes.keys())
+        
+        while remaining:
+            # 找出入度为0的节点
+            ready = [n for n in remaining if in_degree[n] == 0]
+            if not ready:
+                break
+            
+            groups.append(ready)
+            
+            # 移除已处理的节点
+            for node_id in ready:
+                remaining.remove(node_id)
+                for from_id, to_id in self.edges:
+                    if from_id == node_id:
+                        in_degree[to_id] -= 1
+        
+        return groups
+    
+    def execute_parallel(self, initial_context: dict) -> dict:
+        """并行执行"""
+        self._parallel_groups = self._compute_parallel_groups()
+        
+        context = dict(initial_context)
+        context["_execution"] = {
+            "execution_id": self._execution_id,
+            "version": self.version,
+            "steps": [],
+            "parallel": True
+        }
+        
+        results = {}
+        
+        for group in self._parallel_groups:
+            # 并行执行组内节点
+            import concurrent.futures
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(group)) as executor:
+                futures = {}
+                for node_id in group:
+                    node = self.nodes[node_id]
+                    future = executor.submit(node.action, context)
+                    futures[future] = node_id
+                
+                for future in concurrent.futures.as_completed(futures):
+                    node_id = futures[future]
+                    node = self.nodes[node_id]
+                    try:
+                        node.result = future.result()
+                        node.state = "completed"
+                    except Exception as e:
+                        node.state = "failed"
+                        node.error = str(e)
+                    
+                    results[node_id] = node.result
+                    context[node_id] = node.result
+        
+        return {
+            "context": context,
+            "results": results,
+            "parallel_groups": self._parallel_groups,
+            "execution_id": self._execution_id
+        }
+
+
+
+class RetryableDAGExecutor(DAGExecutor):
+    """可重试的DAG执行器"""
+    
+    def __init__(self, version: str = "1.0.0", max_retries: int = 3):
+        super().__init__(version)
+        self.max_retries = max_retries
+        self._retry_counts: Dict[str, int] = {}
+    
+    def execute_with_retry(self, initial_context: dict) -> dict:
+        """执行并重试失败的节点"""
+        self._retry_counts = {node_id: 0 for node_id in self.nodes}
+        
+        for attempt in range(self.max_retries):
+            result = self.execute(initial_context)
+            
+            # 检查是否有失败
+            if not result["failed"]:
+                result["attempts"] = attempt + 1
+                return result
+            
+            # 重试失败的节点
+            failed_id = result["failed"]
+            self._retry_counts[failed_id] += 1
+            
+            # 重置节点状态
+            self.nodes[failed_id].state = "pending"
+            self.nodes[failed_id].error = ""
+        
+        result["attempts"] = self.max_retries
+        result["final_failure"] = True
+        return result
+    
+    def get_retry_stats(self) -> dict:
+        """获取重试统计"""
+        return dict(self._retry_counts)
+
+
+
+class MonitoredDAGExecutor(DAGExecutor):
+    """可监控的DAG执行器 - 带指标收集"""
+    
+    def __init__(self, version: str = "1.0.0"):
+        super().__init__(version)
+        self._metrics = {
+            "node_executions": {},
+            "total_duration": 0.0,
+            "failed_count": 0,
+            "success_count": 0
+        }
+    
+    def _execute_node(self, node: DAGNode, context: dict) -> dict:
+        """执行节点并收集指标"""
+        start_time = time.time()
+        
+        result = super()._execute_node(node, context)
+        
+        duration = time.time() - start_time
+        
+        # 更新指标
+        if node.node_id not in self._metrics["node_executions"]:
+            self._metrics["node_executions"][node.node_id] = {
+                "count": 0,
+                "total_duration": 0.0,
+                "failures": 0
+            }
+        
+        m = self._metrics["node_executions"][node.node_id]
+        m["count"] += 1
+        m["total_duration"] += duration
+        
+        if node.state == "failed":
+            m["failures"] += 1
+            self._metrics["failed_count"] += 1
+        else:
+            self._metrics["success_count"] += 1
+        
+        self._metrics["total_duration"] += duration
+        
+        return result
+    
+    def get_metrics(self) -> dict:
+        """获取执行指标"""
+        return {
+            **self._metrics,
+            "avg_node_duration": {
+                k: v["total_duration"] / max(v["count"], 1)
+                for k, v in self._metrics["node_executions"].items()
+            }
+        }
+    
+    def reset_metrics(self) -> None:
+        """重置指标"""
+        self._metrics = {
+            "node_executions": {},
+            "total_duration": 0.0,
+            "failed_count": 0,
+            "success_count": 0
+        }
+

@@ -499,3 +499,285 @@ def create_coral_heartbeat(interval: int = 60) -> CORALHeartbeat:
 
 def create_self_healing_engine() -> SelfHealingEngine:
     return SelfHealingEngine()
+
+
+# ===== 来自XYZ系统 =====
+class CoralHeartbeat:
+    """K7: CORAL heartbeat with UCB1-based attention redirect.
+
+    Uses EWMA for metric smoothing and paired t-test for verification.
+    Models subsystem dependencies for cascading health assessment.
+    """
+
+    def __init__(self, subsystems: list[str] | None = None,
+                 config: ZConfig | None = None,
+                 dependencies: dict[str, list[str]] | None = None):
+        self._config = config or ZConfig()
+        self._subsystems = subsystems or ["memory", "evolution", "safety", "search"]
+        self._observations: dict[str, list[float]] = {s: [] for s in self._subsystems}
+        self._attention_counts: dict[str, int] = {s: 0 for s in self._subsystems}
+        self._total_beats = 0
+        self._last_beat: dict | None = None
+        self._stats = {"observe": 0, "redirect": 0, "verify": 0,
+                       "redirects_total": 0}
+
+        # EWMA tracking: smooth metric history
+        self._ewma_alpha = 0.3  # Weight for new observations
+        self._ewma_values: dict[str, float] = {s: 0.5 for s in self._subsystems}
+
+        # Subsystem dependency graph: if A depends on B, B's failure degrades A
+        # dependencies[A] = [B, C] means A depends on B and C
+        self._dependencies: dict[str, list[str]] = dependencies or {
+            "search": ["memory"],      # Search depends on memory
+            "evolution": ["memory"],   # Evolution depends on memory
+            "safety": ["memory"],      # Safety checks need memory
+        }
+
+    def beat(self, metrics: dict[str, float] | None = None) -> dict:
+        """Execute one CORAL heartbeat cycle.
+
+        Args:
+            metrics: current subsystem metrics (subsystem_name → score)
+
+        Returns:
+            Beat result with phase, redirect target, and verification.
+        """
+        self._total_beats += 1
+        result = {"beat": self._total_beats}
+
+        # Beat 1: OBSERVE — collect metrics and update EWMA
+        if metrics:
+            for subsystem, score in metrics.items():
+                if subsystem in self._observations:
+                    self._observations[subsystem].append(score)
+                    # Update EWMA
+                    prev = self._ewma_values[subsystem]
+                    self._ewma_values[subsystem] = (
+                        self._ewma_alpha * score + (1 - self._ewma_alpha) * prev
+                    )
+        self._stats["observe"] += 1
+        result["observe"] = dict(metrics or {})
+        result["ewma"] = dict(self._ewma_values)
+
+        # Beat 2: REDIRECT — find underperforming subsystem via UCB1
+        # Account for dependency degradation
+        adjusted_health = self._compute_adjusted_health()
+        redirect_target = self._select_attention_target(adjusted_health)
+        self._attention_counts[redirect_target] += 1
+        self._stats["redirect"] += 1
+        self._stats["redirects_total"] += 1
+        result["redirect_target"] = redirect_target
+        result["adjusted_health"] = adjusted_health
+
+        # Beat 3: VERIFY — check if last redirect improved the metric (t-test)
+        verification = self._verify_last_redirect()
+        self._stats["verify"] += 1
+        result["verification"] = verification
+
+        self._last_beat = result
+        return result
+
+    def _compute_adjusted_health(self) -> dict[str, float]:
+        """Compute health adjusted by subsystem dependencies.
+
+        If a dependency is unhealthy, the dependent subsystem's
+        effective health is reduced proportionally.
+
+        adjustment[A] = ewma[A] × Π(ewma[dep] for dep in dependencies[A])
+        """
+        adjusted = {}
+        for s in self._subsystems:
+            base = self._ewma_values[s]
+            deps = self._dependencies.get(s, [])
+            if deps:
+                # Multiply by dependency health (all must be healthy)
+                dep_product = 1.0
+                for dep in deps:
+                    if dep in self._ewma_values:
+                        dep_product *= self._ewma_values[dep]
+                adjusted[s] = base * (0.5 + 0.5 * dep_product)
+            else:
+                adjusted[s] = base
+        return adjusted
+
+    def _select_attention_target(self,
+                                  adjusted_health: dict[str, float]) -> str:
+        """UCB1-based attention selection with dependency awareness.
+
+        UCB1 = mean_reward + sqrt(2 * ln(total) / count)
+        Mean reward uses EWMA-adjusted health.
+        """
+        # Ensure every subsystem gets at least one look
+        for s in self._subsystems:
+            if self._attention_counts[s] == 0:
+                return s
+
+        # UCB1 calculation with EWMA
+        ucb_scores = {}
+        for s in self._subsystems:
+            count = self._attention_counts[s]
+            # Use EWMA as the reward signal (smoother than raw observations)
+            mean = adjusted_health.get(s, 0.5)
+            ucb = mean + math.sqrt(2 * math.log(self._total_beats) / count)
+            ucb_scores[s] = ucb
+
+        return max(ucb_scores, key=ucb_scores.get)
+
+    def _verify_last_redirect(self) -> dict:
+        """Verify that the last redirect improved the target subsystem.
+
+        Uses paired t-test for statistical significance when enough
+        observations are available, otherwise falls back to simple comparison.
+        """
+        if not self._last_beat:
+            return {"status": "no_previous_beat"}
+
+        target = self._last_beat.get("redirect_target", "")
+        observations = self._observations.get(target, [])
+
+        if len(observations) < 2:
+            return {"status": "insufficient_data", "target": target}
+
+        # Split observations: before redirect vs after
+        # Use last beat number to determine split point
+        before_count = max(1, len(observations) - 3)
+        before = observations[:before_count]
+        after = observations[before_count:]
+
+        if len(after) < 2:
+            # Fall back to simple comparison
+            improving = observations[-1] > observations[0]
+            return {
+                "status": "verified" if improving else "no_improvement",
+                "target": target,
+                "method": "simple_comparison",
+                "improving": improving,
+            }
+
+        # Paired t-test: compare before vs after means
+        t_stat, p_value, significant = self._paired_t_test(before, after)
+
+        after_mean = sum(after) / len(after)
+        before_mean = sum(before) / len(before)
+        improving = after_mean > before_mean
+
+        return {
+            "status": "verified" if (improving and significant) else "no_improvement",
+            "target": target,
+            "method": "paired_t_test",
+            "before_mean": before_mean,
+            "after_mean": after_mean,
+            "t_statistic": t_stat,
+            "p_value": p_value,
+            "significant": significant,
+            "improving": improving,
+        }
+
+    @staticmethod
+    def _paired_t_test(before: list[float], after: list[float],
+                       alpha: float = 0.05) -> tuple[float, float, bool]:
+        """Simplified paired t-test for two samples.
+
+        Returns (t_statistic, approximate_p_value, is_significant).
+
+        Uses Welch's t-test approximation for unequal sample sizes.
+        """
+        n1 = len(before)
+        n2 = len(after)
+        if n1 == 0 or n2 == 0:
+            return 0.0, 1.0, False
+
+        mean1 = sum(before) / n1
+        mean2 = sum(after) / n2
+
+        # Variances
+        var1 = sum((x - mean1) ** 2 for x in before) / max(n1 - 1, 1)
+        var2 = sum((x - mean2) ** 2 for x in after) / max(n2 - 1, 1)
+
+        # Standard error
+        se = math.sqrt(var1 / n1 + var2 / n2)
+        if se == 0:
+            return 0.0, 1.0, False
+
+        # t-statistic
+        t_stat = (mean2 - mean1) / se
+
+        # Degrees of freedom (Welch-Satterthwaite)
+        if var1 / n1 + var2 / n2 > 0:
+            df = ((var1 / n1 + var2 / n2) ** 2) / \
+                 ((var1 / n1) ** 2 / max(n1 - 1, 1) +
+                  (var2 / n2) ** 2 / max(n2 - 1, 1))
+        else:
+            df = n1 + n2 - 2
+
+        # Approximate p-value using normal approximation for large df
+        # For small df, use a rough approximation
+        if df >= 30:
+            # Normal approximation
+            p_value = 2 * (1 - _normal_cdf(abs(t_stat)))
+        else:
+            # Rough t-distribution approximation
+            p_value = 2 * (1 - _t_cdf_approx(abs(t_stat), df))
+
+        significant = p_value < alpha
+        return t_stat, p_value, significant
+
+    def get_subsystem_health(self) -> dict[str, float]:
+        """Get health score for each subsystem (latest raw observation + EWMA)."""
+        health = {}
+        for s in self._subsystems:
+            obs = self._observations[s]
+            health[s] = obs[-1] if obs else 0.5
+        return health
+
+    def get_subsystem_health_ewma(self) -> dict[str, float]:
+        """Get EWMA-smoothed health for each subsystem."""
+        return dict(self._ewma_values)
+
+    def get_attention_distribution(self) -> dict[str, float]:
+        """Get attention distribution (fraction of beats per subsystem)."""
+        total = sum(self._attention_counts.values())
+        if total == 0:
+            return {s: 1.0 / len(self._subsystems) for s in self._subsystems}
+        return {s: c / total for s, c in self._attention_counts.items()}
+
+    def set_dependencies(self, dependencies: dict[str, list[str]]) -> None:
+        """Update subsystem dependency graph."""
+        self._dependencies = dependencies
+
+    @property
+    def total_beats(self) -> int:
+        return self._total_beats
+
+    @property
+    def stats(self) -> dict:
+        return dict(self._stats)
+
+
+def _normal_cdf(x: float) -> float:
+    """Approximate normal CDF using error function."""
+    # Abramowitz and Stegun approximation
+    a1 = 0.254829592
+    a2 = -0.284496736
+    a3 = 1.421413741
+    a4 = -1.453152027
+    a5 = 1.061405429
+    p = 0.3275911
+
+    sign = 1 if x >= 0 else -1
+    x = abs(x) / math.sqrt(2)
+
+    t = 1.0 / (1.0 + p * x)
+    y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * math.exp(-x * x)
+
+    return 0.5 * (1.0 + sign * y)
+
+
+def _t_cdf_approx(t: float, df: float) -> float:
+    """Approximate t-distribution CDF using normal with correction."""
+    # For large df, t ≈ normal; for small df, use correction
+    correction = (t ** 3 + t) / (4 * df)
+    z = t * (1 - correction / (1 + correction)) if df > 0 else t
+    return _normal_cdf(z)
+
+

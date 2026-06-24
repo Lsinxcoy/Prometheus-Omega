@@ -422,3 +422,310 @@ def create_harness_x() -> HarnessX:
 
 def create_fggm() -> FGGM:
     return FGGM()
+
+
+# ===== 来自XYZ系统 =====
+class CommunityTree:
+    """Hierarchical community structure.
+
+    Root = entire graph.
+    Leaves = smallest detected communities.
+    Supports drill_down() and roll_up() for navigation.
+    """
+
+    def __init__(self, root: CommunityNode):
+        self.root = root
+
+    def drill_down(self, label: str) -> CommunityNode | None:
+        """Find a community by label and return its children."""
+        node = self._find_node(self.root, label)
+        if node:
+            return node
+        return None
+
+    def roll_up(self, label: str) -> CommunityNode | None:
+        """Find a community and return its parent."""
+        node = self._find_node(self.root, label)
+        if node and node.parent:
+            return self._find_node(self.root, node.parent)
+        return self.root
+
+    def leaf_communities(self) -> list[CommunityNode]:
+        """Get all leaf (smallest) communities."""
+        leaves = []
+        self._collect_leaves(self.root, leaves)
+        return leaves
+
+    def flat_communities(self, level: int = 0) -> list[list[str]]:
+        """Get all communities at a specific level."""
+        result = []
+        self._collect_at_level(self.root, level, result)
+        return result
+
+    def _find_node(self, node: CommunityNode, label: str) -> CommunityNode | None:
+        if node.label == label:
+            return node
+        for child in node.children:
+            found = self._find_node(child, label)
+            if found:
+                return found
+        return None
+
+    def _collect_leaves(self, node: CommunityNode, leaves: list):
+        if node.is_leaf:
+            leaves.append(node)
+        else:
+            for child in node.children:
+                self._collect_leaves(child, leaves)
+
+    def _collect_at_level(self, node: CommunityNode, level: int,
+                          result: list[list[str]]):
+        if node.level == level:
+            result.append(node.members)
+        for child in node.children:
+            self._collect_at_level(child, level, result)
+
+    def to_dict(self) -> dict:
+        return self.root.to_dict()
+
+
+def detect_communities(store: MinervaStore, branch: str = "main",
+                       min_size: int = 3,
+                       algorithm: str = "label_propagation",
+                       max_iterations: int = 20) -> list[list[str]]:
+    """M10: Community detection via label propagation or BFS.
+
+    Returns list of communities, each is a list of node IDs.
+    Communities with < min_size nodes are filtered out.
+    """
+    all_nodes = store.get_all_nodes(branch, limit=10000)
+    node_ids = {n.id for n in all_nodes}
+
+    if not node_ids:
+        return []
+
+    if algorithm == "label_propagation":
+        adj = _build_adjacency(store, node_ids, branch)
+        communities = _label_propagation_fast(node_ids, adj, max_iterations)
+    else:
+        communities = _bfs_components(store, node_ids, branch)
+
+    return [c for c in communities if len(c) >= min_size]
+
+
+def detect_hierarchical(store: MinervaStore, branch: str = "main",
+                        min_size: int = 3, max_depth: int = 3,
+                        max_iterations: int = 20) -> CommunityTree:
+    """M10+: Hierarchical community detection.
+
+    1. Run label propagation on the full graph → top-level communities
+    2. For each community > 2×min_size, run sub-community detection
+    3. Repeat until max_depth or all communities are small enough
+
+    Returns CommunityTree with drill_down/roll_up navigation.
+    """
+    all_nodes = store.get_all_nodes(branch, limit=10000)
+    node_ids = {n.id for n in all_nodes}
+
+    if not node_ids:
+        root = CommunityNode("root", list(node_ids), level=0)
+        return CommunityTree(root)
+
+    adj = _build_adjacency(store, node_ids, branch)
+    top_communities = _label_propagation_fast(node_ids, adj, max_iterations)
+
+    # Build root
+    root = CommunityNode("root", list(node_ids), level=0)
+
+    # Recursively split communities
+    for idx, community in enumerate(top_communities):
+        label = f"c{idx}"
+        cnode = CommunityNode(label, community, parent="root", level=1)
+        root.children.append(cnode)
+
+        if len(community) >= 2 * min_size and max_depth > 1:
+            _split_recursive(store, cnode, community, adj, branch,
+                            min_size, max_depth, max_iterations)
+
+    return CommunityTree(root)
+
+
+def _split_recursive(store: MinervaStore, parent: CommunityNode,
+                     members: list[str], global_adj: dict,
+                     branch: str, min_size: int,
+                     max_depth: int, max_iterations: int):
+    """Recursively split a community into sub-communities."""
+    # Filter adjacency to only this community's nodes
+    sub_ids = set(members)
+    sub_adj: dict[str, list[tuple[str, float]]] = {}
+    for nid in sub_ids:
+        if nid in global_adj:
+            sub_adj[nid] = [(nb, w) for nb, w in global_adj[nid] if nb in sub_ids]
+
+    sub_communities = _label_propagation_fast(sub_ids, sub_adj, max_iterations)
+
+    for idx, sub_comm in enumerate(sub_communities):
+        if len(sub_comm) < min_size:
+            continue
+        label = f"{parent.label}_s{idx}"
+        cnode = CommunityNode(label, sub_comm, parent=parent.label,
+                              level=parent.level + 1)
+        parent.children.append(cnode)
+
+        if len(sub_comm) >= 2 * min_size and parent.level + 1 < max_depth:
+            _split_recursive(store, cnode, sub_comm, global_adj, branch,
+                            min_size, max_depth, max_iterations)
+
+
+def _build_adjacency(store: MinervaStore, node_ids: set[str],
+                     branch: str) -> dict[str, list[tuple[str, float]]]:
+    """Pre-build adjacency list from store — single O(n) I/O pass.
+
+    Returns {node_id: [(neighbor_id, edge_weight), ...]}.
+    This eliminates repeated store.get_neighbors() calls during
+    label propagation iterations.
+    """
+    adj: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    for nid in node_ids:
+        neighbors = store.get_neighbors(nid, branch=branch)
+        for edge, neighbor in neighbors:
+            if neighbor.id in node_ids:
+                adj[nid].append((neighbor.id, edge.weight))
+    return dict(adj)
+
+
+def _label_propagation_fast(node_ids: set[str],
+                             adj: dict[str, list[tuple[str, float]]],
+                             max_iterations: int) -> list[list[str]]:
+    """Label propagation using pre-built adjacency list.
+
+    Same algorithm as before but O(n·iterations) dict lookups
+    instead of O(n·iterations) store queries.
+    """
+    labels: dict[str, str] = {nid: nid for nid in node_ids}
+
+    for iteration in range(max_iterations):
+        changed = False
+
+        for nid in node_ids:
+            neighbors = adj.get(nid, [])
+            if not neighbors:
+                continue
+
+            # Weighted vote
+            label_weights: dict[str, float] = defaultdict(float)
+            for neighbor_id, weight in neighbors:
+                if neighbor_id in labels:
+                    label_weights[labels[neighbor_id]] += weight
+
+            if not label_weights:
+                continue
+
+            best_label = max(label_weights, key=label_weights.get)
+            if best_label != labels[nid]:
+                labels[nid] = best_label
+                changed = True
+
+        if not changed:
+            break
+
+    # Group by label
+    label_groups: dict[str, list[str]] = defaultdict(list)
+    for nid, label in labels.items():
+        label_groups[label].append(nid)
+
+    return list(label_groups.values())
+
+
+def _bfs_components(store: MinervaStore, node_ids: set[str],
+                    branch: str) -> list[list[str]]:
+    """BFS connected components — exact community detection."""
+    visited: set[str] = set()
+    communities: list[list[str]] = []
+
+    for start_id in node_ids:
+        if start_id in visited:
+            continue
+
+        component: list[str] = []
+        queue = [start_id]
+        visited.add(start_id)
+
+        while queue:
+            current = queue.pop(0)
+            component.append(current)
+
+            neighbors = store.get_neighbors(current, branch=branch)
+            for _edge, neighbor in neighbors:
+                if neighbor.id not in visited and neighbor.id in node_ids:
+                    visited.add(neighbor.id)
+                    queue.append(neighbor.id)
+
+        communities.append(component)
+
+    return communities
+
+
+def find_bridges(store: MinervaStore, communities: list[list[str]],
+                 branch: str = "main") -> list[tuple[str, str, float]]:
+    """Find bridge edges between communities."""
+    node_to_community: dict[str, int] = {}
+    for idx, community in enumerate(communities):
+        for nid in community:
+            node_to_community[nid] = idx
+
+    bridges = []
+    seen_pairs: set[frozenset[int]] = set()
+
+    for community in communities:
+        for nid in community:
+            neighbors = store.get_neighbors(nid, branch=branch)
+            for edge, neighbor in neighbors:
+                if neighbor.id in node_to_community:
+                    neighbor_comm = node_to_community[neighbor.id]
+                    current_comm = node_to_community[nid]
+                    if current_comm != neighbor_comm:
+                        pair = frozenset({current_comm, neighbor_comm})
+                        if pair not in seen_pairs:
+                            seen_pairs.add(pair)
+                            bridges.append((nid, neighbor.id, edge.weight))
+
+    return bridges
+
+
+def compute_modularity(store: MinervaStore, communities: list[list[str]],
+                       branch: str = "main") -> float:
+    """Compute modularity score for a community partition.
+
+    Q = Σ_c [L_c/L - (k_c / 2L)²]
+    """
+    node_to_comm: dict[str, int] = {}
+    for idx, comm in enumerate(communities):
+        for nid in comm:
+            node_to_comm[nid] = idx
+
+    total_weight = 0.0
+    comm_weights: dict[int, float] = defaultdict(float)
+    comm_degrees: dict[int, float] = defaultdict(float)
+
+    for comm in communities:
+        for nid in comm:
+            neighbors = store.get_neighbors(nid, branch=branch)
+            for edge, neighbor in neighbors:
+                total_weight += edge.weight / 2
+                comm_idx = node_to_comm.get(nid, -1)
+                comm_degrees[comm_idx] += edge.weight
+                if neighbor.id in node_to_comm and node_to_comm[neighbor.id] == comm_idx:
+                    comm_weights[comm_idx] += edge.weight / 2
+
+    if total_weight == 0:
+        return 0.0
+
+    modularity = 0.0
+    for idx in set(node_to_comm.values()):
+        if idx in comm_weights and idx in comm_degrees:
+            modularity += (comm_weights[idx] / total_weight) - (comm_degrees[idx] / (2 * total_weight)) ** 2
+
+    return modularity
+
+
