@@ -100,6 +100,72 @@ class SelfHealingEngine:
         return False
 
 
+class Monitor:
+    """统一监控系统 - 整合所有监控功能
+    
+    整合Z-score异常检测、趋势预测、CORAL心跳、自愈引擎、警报系统
+    """
+    
+    def __init__(self, name: str = "omega_monitor"):
+        self.name = name
+        self.zscore = ZScoreAnomaly(threshold=3.0)
+        self.trend = TrendPredictor(window=10)
+        self.coral = CORALHeartbeat(interval=60)
+        self.healer = SelfHealingEngine()
+        self.alerts = AlertSystem()
+        self._running = False
+    
+    def start(self) -> bool:
+        """启动监控"""
+        self._running = True
+        self.alerts.alert(AlertLevel.INFO, f"{self.name} started")
+        return True
+    
+    def stop(self):
+        """停止监控"""
+        self._running = False
+        self.alerts.alert(AlertLevel.INFO, f"{self.name} stopped")
+    
+    def record_metric(self, name: str, value: float) -> bool:
+        """记录指标并检测异常"""
+        # 检测异常
+        if self.zscore.is_anomaly(value):
+            self.alerts.alert(
+                AlertLevel.WARNING, 
+                f"Anomaly detected: {name}={value}"
+            )
+            return False
+        
+        # 记录数据
+        self.zscore.add(value)
+        self.trend.history.append(value)
+        if len(self.trend.history) > self.trend.window:
+            self.trend.history.pop(0)
+        
+        return True
+    
+    def check_heartbeat(self) -> Dict[str, bool]:
+        """检查CORAL心跳"""
+        return self.coral.heartbeat()
+    
+    def heal_error(self, error: Dict) -> bool:
+        """自愈错误"""
+        result = self.healer.heal(error)
+        if result:
+            self.alerts.alert(AlertLevel.INFO, f"Healed error: {error}")
+        return result
+    
+    def get_status(self) -> Dict[str, any]:
+        """获取监控状态"""
+        return {
+            "name": self.name,
+            "running": self._running,
+            "metrics_count": len(self.zscore.values),
+            "trend_history": len(self.trend.history),
+            "alerts_count": len(self.alerts.alerts),
+        }
+
+
 class AlertSystem:
     """警报系统"""
     

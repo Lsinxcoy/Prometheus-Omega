@@ -480,15 +480,27 @@ class Schema:
         return len(errors) == 0, errors
 
 
+# 导入统一数据结构
+from .schema import OmegaNode, OmegaConfig, NodeType, TrustLevel, MemoryLayer
+
+# ===== 兼容性别名 (使用统一schema) =====
+Node = OmegaNode
+Config = OmegaConfig
+
 # ===== 工厂函数 =====
 def create_uuid() -> str:
     """创建UUIDv7"""
     return UUIDv7Generator.generate()
 
 
-def create_config(**kwargs) -> Config:
-    """创建配置"""
-    return Config(**kwargs)
+def create_node(**kwargs) -> OmegaNode:
+    """创建统一节点"""
+    return OmegaNode(**kwargs)
+
+
+def create_config(**kwargs) -> OmegaConfig:
+    """创建统一配置"""
+    return OmegaConfig(**kwargs)
 
 
 def create_rule_engine() -> DeterministicRuleEngine:

@@ -134,13 +134,93 @@ class UCB1Bandit:
 
 
 class CGP:
-    """笛卡尔遗传编程 - 来自X系统#23"""
-    def __init__(self, rows: int = 5, cols: int = 5, levels: int = 10):
-        self.rows, self.cols, self.levels = rows, cols, levels
-        self.nodes = []
+    """笛卡尔遗传编程 - 来自X系统#23
     
-    def generate(self) -> List:
-        return [random.randint(0, self.levels) for _ in range(self.rows * self.cols)]
+    自动生成程序/电路结构
+    """
+    def __init__(self, inputs: int = 2, outputs: int = 1, rows: int = 5, cols: int = 5, levels: int = 10):
+        self.inputs = inputs
+        self.outputs = outputs
+        self.rows = rows
+        self.cols = cols
+        self.levels = levels  # levels_back参数
+        self.functions = ['add', 'sub', 'mul', 'div', 'sin', 'cos', 'max', 'min']
+    
+    def generate(self) -> Dict[str, Any]:
+        """生成完整CGP程序"""
+        # 生成节点矩阵
+        nodes = []
+        for row in range(self.rows):
+            for col in range(self.cols):
+                # 每个节点选择输入连接
+                max_input_idx = self.inputs + (row * self.cols + col) - 1
+                if max_input_idx >= self.inputs:
+                    # 随机选择输入源
+                    input1 = random.randint(0, max_input_idx)
+                    input2 = random.randint(0, max_input_idx)
+                    func = random.choice(self.functions)
+                    nodes.append({
+                        'row': row, 'col': col,
+                        'inputs': [input1, input2],
+                        'function': func
+                    })
+        
+        # 生成输出连接
+        output_connections = []
+        for out_idx in range(self.outputs):
+            last_col_start = (self.rows - 1) * self.cols
+            node_idx = random.randint(last_col_start, last_col_start + self.cols - 1)
+            output_connections.append(node_idx)
+        
+        return {
+            'nodes': nodes,
+            'outputs': output_connections,
+            'inputs': self.inputs,
+            'outputs_count': self.outputs
+        }
+    
+    def evaluate(self, program: Dict, inputs: List[float]) -> List[float]:
+        """评估CGP程序"""
+        if not inputs or len(inputs) != self.inputs:
+            return []
+        
+        # 简化的前向传播
+        values = list(inputs)
+        
+        for node in program.get('nodes', []):
+            # 获取输入值
+            in_vals = [values[i] for i in node['inputs'][:2] if i < len(values)]
+            
+            # 应用函���
+            func = node['function']
+            if func == 'add' and len(in_vals) >= 2:
+                result = in_vals[0] + in_vals[1]
+            elif func == 'sub' and len(in_vals) >= 2:
+                result = in_vals[0] - in_vals[1]
+            elif func == 'mul' and len(in_vals) >= 2:
+                result = in_vals[0] * in_vals[1]
+            elif func == 'div' and len(in_vals) >= 2:
+                result = in_vals[0] / (in_vals[1] + 1e-10)
+            elif func == 'sin':
+                result = math.sin(in_vals[0] if in_vals else 0)
+            elif func == 'cos':
+                result = math.cos(in_vals[0] if in_vals else 0)
+            elif func == 'max' and len(in_vals) >= 2:
+                result = max(in_vals[0], in_vals[1])
+            elif func == 'min' and len(in_vals) >= 2:
+                result = min(in_vals[0], in_vals[1])
+            else:
+                result = in_vals[0] if in_vals else 0
+            
+            values.append(result)
+        
+        # 返回输出
+        outputs = []
+        for out_idx in program.get('outputs', []):
+            if out_idx < len(values):
+                outputs.append(values[out_idx])
+        
+        return outputs
 
 
 class IslandGA:

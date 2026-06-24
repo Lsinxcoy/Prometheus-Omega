@@ -8,6 +8,7 @@
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Callable
 from enum import Enum
+from datetime import datetime, timezone
 import math
 
 
@@ -128,9 +129,32 @@ class PolyphonicRetrieval:
         return fused
     
     def _semantic_search(self, query: str, memory_store, top_k: int) -> List[RetrievalResult]:
-        """语义检索"""
-        # 简化实现
-        return []
+        """语义检索 - 使用TF-IDF相似度简化"""
+        if not hasattr(memory_store, 'entries') or not memory_store.entries:
+            return []
+        
+        # 简单的TF-IDF相似度计算
+        query_words = set(query.lower().split())
+        
+        results = []
+        for entry in memory_store.entries.values():
+            content_words = set(entry.content.lower().split())
+            if content_words:
+                # Jaccard相似度作为语义近似
+                intersection = len(query_words & content_words)
+                union = len(query_words | content_words)
+                score = intersection / union if union > 0 else 0
+                
+                if score > 0:
+                    results.append(RetrievalResult(
+                        entry_id=entry.id,
+                        content=entry.content,
+                        score=score,
+                        method=RetrievalMethod.SEMANTIC
+                    ))
+        
+        results.sort(key=lambda x: -x.score)
+        return results[:top_k]
     
     def _keyword_search(self, query: str, memory_store, top_k: int) -> List[RetrievalResult]:
         """关键词检索"""
@@ -138,25 +162,94 @@ class PolyphonicRetrieval:
         query_lower = query.lower()
         for entry in memory_store.entries.values():
             if query_lower in entry.content.lower():
+                # 简单计数作为相关性分数
+                count = entry.content.lower().count(query_lower)
+                results.append(RetrievalResult(
+                    entry_id=entry.id,
+                    content=entry.content,
+                    score=float(count),
+                    method=RetrievalMethod.KEYWORD
+                ))
+        results.sort(key=lambda x: -x.score)
+        return results[:top_k]
+    
+    def _graph_search(self, query: str, memory_store, top_k: int) -> List[RetrievalResult]:
+        """图遍历检索 - 通过tags关系"""
+        if not hasattr(memory_store, 'entries'):
+            return []
+        
+        results = []
+        query_tags = set(query.lower().split())
+        
+        for entry in memory_store.entries.values():
+            entry_tags = getattr(entry, 'tags', []) or []
+            entry_tags_set = set(entry_tags)
+            if entry_tags_set:
+                common = len(query_tags & entry_tags_set)
+                if common > 0:
+                    results.append(RetrievalResult(
+                        entry_id=entry.id,
+                        content=entry.content,
+                        score=float(common),
+                        method=RetrievalMethod.GRAPH,
+                        metadata={'common_tags': list(query_tags & entry_tags_set)}
+                    ))
+        
+        results.sort(key=lambda x: -x.score)
+        return results[:top_k]
+    
+    def _temporal_search(self, query: str, memory_store, top_k: int) -> List[RetrievalResult]:
+        """时间序检索 - 返回最近的记忆"""
+        if not hasattr(memory_store, 'entries'):
+            return []
+        
+        now = datetime.now(timezone.utc)
+        entries_with_time = []
+        
+        for entry in memory_store.entries.values():
+            created = getattr(entry, 'created_at', None)
+            if created:
+                # 计算时间权重: 越新分数越高
+                if isinstance(created, datetime):
+                    age_hours = (now - created).total_seconds() / 3600
+                    score = 1.0 / (1.0 + age_hours / 24)  # 每天衰减一半
+                else:
+                    score = 0.5
+                    age_hours = 0
+                
+                entries_with_time.append((entry, score, age_hours))
+        
+        entries_with_time.sort(key=lambda x: -x[1])
+        
+        return [RetrievalResult(
+            entry_id=entry.id,
+            content=entry.content,
+            score=score,
+            method=RetrievalMethod.TEMPORAL,
+            metadata={'age_hours': age_hours}
+        ) for entry, score, age_hours in entries_with_time[:top_k]]
+    
+    def _entity_search(self, query: str, memory_store, top_k: int) -> List[RetrievalResult]:
+        """实体关联检索 - 通过实体类型匹配"""
+        if not hasattr(memory_store, 'entries'):
+            return []
+        
+        results = []
+        
+        for entry in memory_store.entries.values():
+            # 检查实体类型标签
+            entity_type = getattr(entry, 'entity_type', None)
+            if entity_type and entity_type.lower() in query.lower():
                 results.append(RetrievalResult(
                     entry_id=entry.id,
                     content=entry.content,
                     score=1.0,
-                    method=RetrievalMethod.KEYWORD
+                    method=RetrievalMethod.HYBRID,
+                    metadata={'entity_type': entity_type}
                 ))
+        
+        results.sort(key=lambda x: -x.score)
         return results[:top_k]
-    
-    def _graph_search(self, query: str, memory_store, top_k: int) -> List[RetrievalResult]:
-        """图遍历检索"""
-        return []
-    
-    def _temporal_search(self, query: str, memory_store, top_k: int) -> List[RetrievalResult]:
-        """时间序检索"""
-        return []
-    
-    def _entity_search(self, query: str, memory_store, top_k: int) -> List[RetrievalResult]:
-        """实体关联检索"""
-        return []
 
 
 class VectorSearch:

@@ -40,18 +40,115 @@ class FourLayerDefense:
 
 
 class FiveGates:
-    """FiveGates链式熔断 - 来自X/Y系统#34"""
+    """FiveGates链式熔断 - 来自X/Y系统#34
+    
+    五门安全检查: 读门、写门、 Consolidation门、执行门、退出门
+    """
     
     def __init__(self):
-        self.gates = {"gate1": True, "gate2": True, "gate3": True, "gate4": True, "gate5": True}
+        self.gates = {
+            "read": True,      # 读门: 验证访问权限
+            "write": True,     # 写门: 验证写入质量
+            "consolidate": True,  # Consolidation门: 验证记忆巩固
+            "execute": True,   # 执行门: 验证执行安全
+            "exit": True,      # 退出门: 验证输出安全
+        }
+    
+    def read_gate_check(self, node) -> bool:
+        """读门检查 - 验证节点是否可以读取
+        
+        Args:
+            node: OmegaNode对象
+            
+        Returns:
+            bool: 是否允许读取
+        """
+        if not self.gates.get("read", True):
+            return False
+        
+        # 检查节点的trust级别
+        trust = getattr(node, 'trust', 0)
+        return trust >= 1  # 至少LOW信任级别
+    
+    def write_gate_check(self, node) -> bool:
+        """写门检查 - 验证节点是否可以写入
+        
+        Args:
+            node: OmegaNode对象
+            
+        Returns:
+            bool: 是否允许写入
+        """
+        if not self.gates.get("write", True):
+            return False
+        
+        # 检查内容质量
+        importance = getattr(node, 'importance', 0)
+        utility = getattr(node, 'utility', 0)
+        
+        return importance > 0.1 and utility >= 0
+    
+    def consolidate_gate_check(self, nodes: list) -> bool:
+        """Consolidation门检查 - 验证是否可以 Consolidation
+        
+        Args:
+            nodes: OmegaNode列表
+            
+        Returns:
+            bool: 是否允许 Consolidation
+        """
+        if not self.gates.get("consolidate", True):
+            return False
+        
+        # 需要至少3个节点才能 Consolidation
+        return len(nodes) >= 3
+    
+    def execute_gate_check(self, tool_name: str, params: dict) -> bool:
+        """执行门检查 - 验证工具是否可以执行
+        
+        Args:
+            tool_name: 工具名称
+            params: 工具参数
+            
+        Returns:
+            bool: 是否允许执行
+        """
+        if not self.gates.get("execute", True):
+            return False
+        
+        # 危险工具黑名单
+        dangerous = ['eval', 'exec', '__import__', 'os.system', 'subprocess']
+        return not any(d in tool_name for d in dangerous)
+    
+    def exit_gate_check(self, output: str) -> bool:
+        """退出门检查 - 验证输出是否安全
+        
+        Args:
+            output: 输出内容
+            
+        Returns:
+            bool: 是否允许输出
+        """
+        if not self.gates.get("exit", True):
+            return False
+        
+        # 检查敏感信息泄露
+        sensitive_patterns = ['password', 'token', 'secret', 'api_key']
+        output_lower = output.lower()
+        
+        return not any(p in output_lower for p in sensitive_patterns)
     
     def pass_gate(self, gate_name: str) -> bool:
+        """检查指定门是否通过"""
         return self.gates.get(gate_name, False)
     
     def trip(self, gate_name: str):
-        self.gates[gate_name] = False
+        """触发(熔断)指定门"""
+        if gate_name in self.gates:
+            self.gates[gate_name] = False
     
     def reset(self):
+        """重置所有门"""
         for k in self.gates:
             self.gates[k] = True
 

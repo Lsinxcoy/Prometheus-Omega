@@ -97,6 +97,9 @@ class DriftDetector:
 
 
 # 工厂
+# 兼容性别名
+Constitution = ConstitutionalPrinciples
+
 def create_constitutional_principles() -> ConstitutionalPrinciples:
     return ConstitutionalPrinciples()
 

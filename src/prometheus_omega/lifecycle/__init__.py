@@ -151,17 +151,40 @@ class ZeroLLM:
 
 
 class DopamineWriteGate:
-    """多巴胺写入门控 - 来自X/Y系统#11"""
+    """多巴胺写入门控 - 来自X/Y系统#11
     
-    def __init__(self, threshold: float = 0.3):
+    根据内容质量(importance * utility * veracity)和多巴胺水平决定是否允许写入
+    """
+    
+    def __init__(self, threshold: float = 0.3, tau: float = 1.0):
         self.threshold = threshold
+        self.tau = tau  # 质量阈值
         self.dopamine_level = 0.5
     
-    def can_write(self, content_quality: float) -> bool:
-        """是否可以写入"""
-        # 乘法门控: 需要足够的dopamine和quality
-        gate_value = self.dopamine_level * content_quality
-        return gate_value >= self.threshold
+    def can_write(self, node) -> bool:
+        """是否可以写入
+        
+        Args:
+            node: OmegaNode对象或content_quality浮点数(向后兼容)
+        """
+        # 向后兼容: 如果是浮点数，直接使用
+        if isinstance(node, (int, float)):
+            content_quality = node
+        else:
+            # 从OmegaNode提取质量指标
+            importance = getattr(node, 'importance', 0.5)
+            utility = getattr(node, 'utility', 0.0)
+            veracity = getattr(node, 'veracity', 0.5)
+            
+            # 计算综合质量分数 (0-1范围)
+            content_quality = importance * veracity * (0.5 + utility / 20.0)
+        
+        # 门控: 质量必须超过阈值
+        return content_quality >= self.tau
+    
+    def should_write(self, node) -> bool:
+        """别名方法，用于与Z系统兼容"""
+        return self.can_write(node)
     
     def stimulate(self, amount: float = 0.1):
         """刺激多巴胺"""
