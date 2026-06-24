@@ -63,10 +63,17 @@ class GeneticAlgorithm:
     def _select(self) -> List[Individual]:
         """选择 ( Tournament )"""
         selected = []
+        tournament_size = min(3, len(self.population))
+        if tournament_size < 1:
+            return self.population
+        
         for _ in range(self.pop_size):
-            tournament = random.sample(self.population, 3)
-            winner = max(tournament, key=lambda x: x.fitness)
-            selected.append(winner)
+            if len(self.population) >= tournament_size:
+                tournament = random.sample(self.population, tournament_size)
+                winner = max(tournament, key=lambda x: x.fitness)
+                selected.append(winner)
+            else:
+                selected.append(random.choice(self.population))
         return selected
     
     def _crossover(self, parents: List[Individual]) -> List[Individual]:

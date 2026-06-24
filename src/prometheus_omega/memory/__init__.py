@@ -289,7 +289,7 @@ class Bank:
     - Archive: 长期存储
     """
     
-    bank_id: str
+    bank_id: str = "default"
     working: Dict[str, UnifiedEntry] = field(default_factory=dict)
     episodic: Dict[str, UnifiedEntry] = field(default_factory=dict)
     semantic: Dict[str, UnifiedEntry] = field(default_factory=dict)
