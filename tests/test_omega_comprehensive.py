@@ -1,3 +1,5 @@
+import unittest
+
 """
 Prometheus Ω - 完整功能测试
 ===========================
@@ -16,7 +18,7 @@ import time
 
 
 # ===== Foundation层测试 =====
-class TestFoundation:
+class TestFoundation(unittest.TestCase):
     """Foundation层测试"""
     
     def test_uuidv7_generation(self):
@@ -146,7 +148,7 @@ class TestFoundation:
 
 
 # ===== Memory层测试 =====
-class TestMemory:
+class TestMemory(unittest.TestCase):
     """Memory层测试"""
     
     def test_unified_entry(self):
@@ -193,7 +195,7 @@ class TestMemory:
 
 
 # ===== Retrieval层测试 =====
-class TestRetrieval:
+class TestRetrieval(unittest.TestCase):
     """Retrieval层测试"""
     
     def test_rrf(self):
@@ -225,7 +227,7 @@ class TestRetrieval:
 
 
 # ===== Lifecycle层测试 =====
-class TestLifecycle:
+class TestLifecycle(unittest.TestCase):
     """Lifecycle层测试"""
     
     def test_weibull_forgetting(self):
@@ -289,7 +291,7 @@ class TestLifecycle:
 
 
 # ===== Evolution层测试 =====
-class TestEvolution:
+class TestEvolution(unittest.TestCase):
     """Evolution层测试"""
     
     def test_genetic_algorithm(self):
@@ -349,7 +351,7 @@ class TestEvolution:
 
 
 # ===== Safety层测试 =====
-class TestSafety:
+class TestSafety(unittest.TestCase):
     """Safety层测试"""
     
     def test_four_layer_defense(self):
@@ -400,7 +402,7 @@ class TestSafety:
 
 
 # ===== Governance层测试 =====
-class TestGovernance:
+class TestGovernance(unittest.TestCase):
     """Governance层测试"""
     
     def test_constitution(self):
@@ -421,7 +423,7 @@ class TestGovernance:
 
 
 # ===== Monitor层测试 =====
-class TestMonitor:
+class TestMonitor(unittest.TestCase):
     """Monitor层测试"""
     
     def test_zscore_anomaly(self):

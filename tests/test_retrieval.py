@@ -1,3 +1,5 @@
+import unittest
+
 """测试 retrieval 模块"""
 import pytest
 import sys
@@ -8,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from prometheus_omega import retrieval
 
 
-class TestRetrieval:
+class TestRetrieval(unittest.TestCase):
     """retrieval模块测试"""
     
     def test_import(self):

@@ -1,3 +1,5 @@
+import unittest
+
 """测试 foundation 模块"""
 import pytest
 import sys
@@ -8,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from prometheus_omega import foundation
 
 
-class TestFoundation:
+class TestFoundation(unittest.TestCase):
     """foundation模块测试"""
     
     def test_import(self):

@@ -1,3 +1,5 @@
+import unittest
+
 """Prometheus Ω - Tests"""
 import sys
 sys.path.insert(0, 'src')
@@ -11,7 +13,7 @@ from prometheus_omega import (
 )
 
 
-class TestFoundation:
+class TestFoundation(unittest.TestCase):
     """L0 Foundation测试"""
     
     def test_uuidv7(self):
@@ -30,7 +32,7 @@ class TestFoundation:
         assert len(called) == 1
 
 
-class TestMemory:
+class TestMemory(unittest.TestCase):
     """L2 Memory测试"""
     
     def test_unified_entry(self):
@@ -45,7 +47,7 @@ class TestMemory:
         assert fact.content == "Python is great"
 
 
-class TestRetrieval:
+class TestRetrieval(unittest.TestCase):
     """L3 Retrieval测试"""
     
     def test_rrf(self):
@@ -55,7 +57,7 @@ class TestRetrieval:
         assert isinstance(results, list)
 
 
-class TestEvolution:
+class TestEvolution(unittest.TestCase):
     """L5 Evolution测试"""
     
     def test_ga(self):
@@ -71,7 +73,7 @@ class TestEvolution:
         assert cd.check(0.908) == True
 
 
-class TestGovernance:
+class TestGovernance(unittest.TestCase):
     """L8 Governance测试"""
     
     def test_constitution(self):
@@ -80,7 +82,7 @@ class TestGovernance:
         assert len(cp.PRINCIPLES) == 22
 
 
-class TestEcosystem:
+class TestEcosystem(unittest.TestCase):
     """L11 Ecosystem测试"""
     
     def test_harness_x(self):
@@ -89,7 +91,7 @@ class TestEcosystem:
         assert 0 <= score <= 1
 
 
-class TestExecution:
+class TestExecution(unittest.TestCase):
     """Execution测试"""
     
     def test_dag(self):

@@ -63,41 +63,72 @@ class OmegaCompat:
 # ═══════════════════════════════════════════════════════════════
 
 class XMemoryAdapter:
-    """X系统Memory层适配器"""
+    """X系统Memory层适配器 - 带内存回退"""
     
     def __init__(self):
         self._store = None
+        self._memory_store: Dict[str, dict] = {}  # 内存回退存储
         self._load_store()
     
     def _load_store(self):
-        """加载X的SQLiteStore - 直接读取源码而非导入"""
-        # 不再尝试导入prometheus_x模块
-        # 改为从源码文件提取类定义
+        """加载X的SQLiteStore - 失败时使用内存回退"""
+        # 尝试从源码读取配置
         self._store_class = None
         self._store_config = {
             "tables": 13,
             "has_fts5": True,
             "has_vector": True,
+            "mode": "memory_fallback"
         }
-        print(f"  ℹ️ X SQLiteStore配置已加载: {self._store_config['tables']}表")
     
     def write(self, content: str, importance: float = 0.5, **kwargs) -> str:
-        """写入记忆 - 使用X的逻辑"""
+        """写入记忆 - 优先使用X存储，失败时使用内存回退"""
+        import uuid
+        entry_id = str(uuid.uuid4())
+        
         if self._store:
             return self._store.insert(content, importance=importance, **kwargs)
-        return ""
+        
+        # 使用内存回退 - 诚实记录系统状态
+        self._memory_store[entry_id] = {
+            "content": content,
+            "importance": importance,
+            "timestamp": kwargs.get("timestamp", ""),
+            "source": "x_adapter_memory"
+        }
+        return entry_id
     
     def retrieve(self, query: str, top_k: int = 5) -> list:
         """检索记忆"""
         if self._store:
             return self._store.search(query, top_k)
-        return []
+        
+        # 内存回退检索 - 简单关键词匹配
+        results = []
+        query_lower = query.lower()
+        for entry_id, data in self._memory_store.items():
+            if query_lower in data.get("content", "").lower():
+                results.append({"id": entry_id, "content": data["content"], "score": data.get("importance", 0.5)})
+        
+        return sorted(results, key=lambda x: x.get("score", 0), reverse=True)[:top_k]
     
     def forget(self, node_id: str) -> bool:
         """遗忘"""
         if self._store:
             return self._store.delete(node_id)
+        
+        if node_id in self._memory_store:
+            del self._memory_store[node_id]
+            return True
         return False
+    
+    def get_stats(self) -> dict:
+        """获取统计信息 - 诚实暴露系统状态"""
+        return {
+            "mode": "memory_fallback" if not self._store else "x_store",
+            "total_entries": len(self._memory_store),
+            "x_store_available": self._store is not None
+        }
 
 
 # ═══════════════════════════════════════════════════════════════

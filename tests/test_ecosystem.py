@@ -1,3 +1,5 @@
+import unittest
+
 """测试 ecosystem 模块"""
 import pytest
 import sys
@@ -8,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from prometheus_omega import ecosystem
 
 
-class TestEcosystem:
+class TestEcosystem(unittest.TestCase):
     """ecosystem模块测试"""
     
     def test_import(self):

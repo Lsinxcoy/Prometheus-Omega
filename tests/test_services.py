@@ -1,3 +1,5 @@
+import unittest
+
 """测试 services 模块"""
 import pytest
 import sys
@@ -8,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from prometheus_omega import services
 
 
-class TestServices:
+class TestServices(unittest.TestCase):
     """services模块测试"""
     
     def test_import(self):
