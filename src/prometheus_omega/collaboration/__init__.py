@@ -14,12 +14,45 @@ class MessageType(Enum):
 
 @dataclass
 class AgentMessage:
+    """Agent间通信的消息结构"""
     msg_id: str
     sender: str
     receiver: str
     msg_type: MessageType
     content: Any
     timestamp: float = field(default_factory=time.time)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    reply_to: Optional[str] = None
+    ttl: int = 300  # 消息生存时间(秒)
+    
+    def is_expired(self) -> bool:
+        """检查消息是否过期"""
+        return (time.time() - self.timestamp) > self.ttl
+    
+    def age(self) -> float:
+        """获取消息年龄(秒)"""
+        return time.time() - self.timestamp
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            'msg_id': self.msg_id,
+            'sender': self.sender,
+            'receiver': self.receiver,
+            'msg_type': self.msg_type.value,
+            'content': self.content,
+            'timestamp': self.timestamp,
+            'metadata': self.metadata,
+            'reply_to': self.reply_to,
+            'ttl': self.ttl,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'AgentMessage':
+        """从字典创建"""
+        if isinstance(data.get('msg_type'), str):
+            data['msg_type'] = MessageType(data['msg_type'])
+        return cls(**data)
 
 
 class MultiAgentSystem:
@@ -28,12 +61,30 @@ class MultiAgentSystem:
     def __init__(self):
         self.agents: Dict[str, Dict] = {}
         self.messages: List[AgentMessage] = []
+        self.message_queues: Dict[str, List[AgentMessage]] = {}
+        self._history_size = 1000
     
     def register_agent(self, agent_id: str, config: Dict):
+        """注册Agent"""
         self.agents[agent_id] = {"config": config, "status": "active"}
+        self.message_queues[agent_id] = []
+    
+    def unregister_agent(self, agent_id: str) -> bool:
+        """注销Agent"""
+        if agent_id in self.agents:
+            self.agents[agent_id]["status"] = "inactive"
+            return True
+        return False
     
     def send_message(self, sender: str, receiver: str, content: Any, 
                      msg_type: MessageType = MessageType.REQUEST) -> str:
+        """发送消息"""
+        # 检查sender和receiver是否存在
+        if sender not in self.agents:
+            raise ValueError(f"Unknown sender: {sender}")
+        if receiver not in self.agents:
+            raise ValueError(f"Unknown receiver: {receiver}")
+        
         msg = AgentMessage(
             msg_id=str(uuid.uuid4()),
             sender=sender,
@@ -42,7 +93,47 @@ class MultiAgentSystem:
             content=content
         )
         self.messages.append(msg)
+        
+        # 限制历史大小
+        if len(self.messages) > self._history_size:
+            self.messages = self.messages[-self._history_size:]
+        
+        # 加入接收者队列
+        if receiver in self.message_queues:
+            self.message_queues[receiver].append(msg)
+        
         return msg.msg_id
+    
+    def get_messages(self, agent_id: str, unread_only: bool = False) -> List[AgentMessage]:
+        """获取Agent的消息"""
+        if agent_id not in self.message_queues:
+            return []
+        
+        messages = self.message_queues[agent_id]
+        
+        if unread_only:
+            # 只返回未读消息(简化处理)
+            return [m for m in messages if m.receiver == agent_id]
+        
+        return messages
+    
+    def clear_messages(self, agent_id: str):
+        """清空Agent的消息队列"""
+        if agent_id in self.message_queues:
+            self.message_queues[agent_id] = []
+    
+    def get_agent_status(self, agent_id: str) -> Optional[Dict]:
+        """获取Agent状态"""
+        return self.agents.get(agent_id)
+    
+    def broadcast(self, sender: str, content: Any) -> List[str]:
+        """广播消息给所有活跃Agent"""
+        msg_ids = []
+        for agent_id in self.agents:
+            if agent_id != sender and self.agents[agent_id].get("status") == "active":
+                msg_id = self.send_message(sender, agent_id, content, MessageType.BROADCAST)
+                msg_ids.append(msg_id)
+        return msg_ids
 
 
 class CIPEventBus:
@@ -50,60 +141,242 @@ class CIPEventBus:
     
     def __init__(self):
         self.subscribers: Dict[str, List[callable]] = {}
+        self.event_history: List[Dict] = []
+        self._max_history = 500
     
     def subscribe(self, event: str, callback: callable):
+        """订阅事件"""
         if event not in self.subscribers:
             self.subscribers[event] = []
-        self.subscribers[event].append(callback)
+        if callback not in self.subscribers[event]:
+            self.subscribers[event].append(callback)
+    
+    def unsubscribe(self, event: str, callback: callable) -> bool:
+        """取消订阅"""
+        if event in self.subscribers and callback in self.subscribers[event]:
+            self.subscribers[event].remove(callback)
+            return True
+        return False
     
     def publish(self, event: str, data: Any):
+        """发布事件"""
+        # 记录历史
+        self.event_history.append({
+            'event': event,
+            'data': data,
+            'timestamp': time.time(),
+        })
+        
+        # 限制历史大小
+        if len(self.event_history) > self._max_history:
+            self.event_history = self.event_history[-self._max_history:]
+        
+        # 通知订阅者
         for callback in self.subscribers.get(event, []):
-            callback(data)
+            try:
+                callback(data)
+            except Exception as e:
+                print(f"Event callback error: {e}")
+    
+    def get_history(self, event: str = None, limit: int = 50) -> List[Dict]:
+        """获取事件历史"""
+        if event:
+            return [h for h in self.event_history[-limit:] if h['event'] == event]
+        return self.event_history[-limit:]
+    
+    def clear_history(self):
+        """清空历史"""
+        self.event_history = []
 
 
 class KnowledgeBridge:
-    """知识桥接 - 来自X系统#67"""
+    """知识桥接 - 来自X系统#67
+    
+    在Agent之间转移知识/上下文
+    """
     
     def __init__(self):
         self.bridges: Dict[str, str] = {}
+        self.transfer_log: List[Dict] = []
+        self._max_log = 200
     
     def register(self, from_agent: str, to_agent: str, knowledge: str):
+        """注册知识桥接"""
         key = f"{from_agent}->{to_agent}"
         self.bridges[key] = knowledge
     
-    def transfer(self, from_agent: str, to_agent: str) -> Optional[str]:
+    def unregister(self, from_agent: str, to_agent: str) -> bool:
+        """注销知识桥接"""
         key = f"{from_agent}->{to_agent}"
-        return self.bridges.get(key)
+        if key in self.bridges:
+            del self.bridges[key]
+            return True
+        return False
+    
+    def transfer(self, from_agent: str, to_agent: str) -> Optional[str]:
+        """转移知识"""
+        key = f"{from_agent}->{to_agent}"
+        knowledge = self.bridges.get(key)
+        
+        # 记录转移
+        if knowledge:
+            self.transfer_log.append({
+                'from': from_agent,
+                'to': to_agent,
+                'knowledge_size': len(knowledge),
+                'timestamp': time.time(),
+            })
+            if len(self.transfer_log) > self._max_log:
+                self.transfer_log = self.transfer_log[-self._max_log:]
+        
+        return knowledge
+    
+    def has_bridge(self, from_agent: str, to_agent: str) -> bool:
+        """检查是否存在桥接"""
+        key = f"{from_agent}->{to_agent}"
+        return key in self.bridges
+    
+    def list_bridges(self, agent_id: str = None) -> List[Dict]:
+        """列出桥接"""
+        result = []
+        for key, knowledge in self.bridges.items():
+            from_a, to_a = key.split('->')
+            if agent_id is None or from_a == agent_id or to_a == agent_id:
+                result.append({
+                    'from': from_a,
+                    'to': to_a,
+                    'knowledge_size': len(knowledge),
+                })
+        return result
 
 
 class VectorClock:
-    """向量时钟 - 来自X系统#64"""
+    """向量时钟 - 来自X系统#64
+    
+    用于分布式系统中的因果顺序
+    """
     
     def __init__(self, agent_id: str):
         self.agent_id = agent_id
         self.vector: Dict[str, int] = {agent_id: 0}
     
     def increment(self):
+        """递增当前Agent的时钟"""
         self.vector[self.agent_id] = self.vector.get(self.agent_id, 0) + 1
     
     def merge(self, other: Dict[str, int]):
-        for agent, time in other.items():
-            self.vector[agent] = max(self.vector.get(agent, 0), time)
+        """合并另一个向量时钟"""
+        for agent, clock in other.items():
+            self.vector[agent] = max(self.vector.get(agent, 0), clock)
+    
+    def happens_before(self, other: Dict[str, int]) -> bool:
+        """检查是否happens-before"""
+        # self <= other 当且仅当对于所有agent, self[agent] <= other[agent]
+        # 且至少一个严格小于
+        all_less_or_equal = True
+        some_less = False
+        
+        # 合并后比较
+        merged = {**self.vector}
+        for agent, clock in other.items():
+            merged[agent] = max(merged.get(agent, 0), clock)
+        
+        for agent in set(self.vector.keys()) | set(other.keys()):
+            self_val = self.vector.get(agent, 0)
+            other_val = other.get(agent, 0)
+            
+            if self_val > other_val:
+                return False
+            if self_val < other_val:
+                some_less = True
+        
+        return some_less
+    
+    def concurrent_with(self, other: Dict[str, int]) -> bool:
+        """检查是否并发(既不happens-before也不之后)"""
+        return not self.happens_before(other) and not self._happens_after(other)
+    
+    def _happens_after(self, other: Dict[str, int]) -> bool:
+        """检查other是否happens-before self"""
+        return self.happens_before(other)
+    
+    def get_clock(self) -> Dict[str, int]:
+        """获取当前时钟快照"""
+        return dict(self.vector)
+    
+    def set_clock(self, clock: Dict[str, int]):
+        """设置时钟"""
+        self.vector = dict(clock)
 
 
 class CausalKG:
-    """因果知识图谱 - 来自X系统#65"""
+    """因果知识图谱 - 来自X系统#65
+    
+    表示因果关系的知识图谱
+    """
     
     def __init__(self):
         self.edges: Dict[str, List[str]] = {}
+        self.reverse_edges: Dict[str, List[str]] = {}
+        self.edge_weights: Dict[str, Dict[str, float]] = {}
     
-    def add_causality(self, cause: str, effect: str):
+    def add_causality(self, cause: str, effect: str, weight: float = 1.0):
+        """添加因果边"""
         if cause not in self.edges:
             self.edges[cause] = []
-        self.edges[cause].append(effect)
+        if effect not in self.edges[cause]:
+            self.edges[cause].append(effect)
+        
+        # 反向索引
+        if effect not in self.reverse_edges:
+            self.reverse_edges[effect] = []
+        if cause not in self.reverse_edges[effect]:
+            self.reverse_edges[effect].append(cause)
+        
+        # 权重
+        if cause not in self.edge_weights:
+            self.edge_weights[cause] = {}
+        self.edge_weights[cause][effect] = weight
+    
+    def remove_causality(self, cause: str, effect: str) -> bool:
+        """移除因果边"""
+        if cause in self.edges and effect in self.edges[cause]:
+            self.edges[cause].remove(effect)
+            if effect in self.reverse_edges and cause in self.reverse_edges[effect]:
+                self.reverse_edges[effect].remove(cause)
+            return True
+        return False
     
     def get_effects(self, cause: str) -> List[str]:
+        """获取因的所有果"""
         return self.edges.get(cause, [])
+    
+    def get_causes(self, effect: str) -> List[str]:
+        """获取果的所有因"""
+        return self.reverse_edges.get(effect, [])
+    
+    def get_weight(self, cause: str, effect: str) -> float:
+        """获取因果权重"""
+        return self.edge_weights.get(cause, {}).get(effect, 0.0)
+    
+    def get_all_concepts(self) -> List[str]:
+        """获取所有概念节点"""
+        return list(set(self.edges.keys()) | set(self.reverse_edges.keys()))
+    
+    def get_causal_chain(self, start: str, max_depth: int = 3) -> List[List[str]]:
+        """获取从start出发的所有因果链"""
+        result = []
+        
+        def dfs(current: str, path: List[str], depth: int):
+            if depth >= max_depth:
+                result.append(path)
+                return
+            
+            for effect in self.edges.get(current, []):
+                dfs(effect, path + [effect], depth + 1)
+        
+        dfs(start, [start], 0)
+        return result
 
 
 # 工厂

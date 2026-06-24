@@ -262,12 +262,21 @@ class MCPServer:
 
 
 class PrometheusOmegaAPI:
-    """Prometheus Ω REST API 统一入口"""
+    """Prometheus Ω REST API 统一入口
+    
+    整合HTTP/CLI/MCP服务的统一API
+    """
     
     def __init__(self):
         self.http = HTTPServer()
         self.cli = CLIServer()
         self.mcp = MCPServer()
+        self._running = False
+        self._stats = {
+            'requests': 0,
+            'errors': 0,
+            'start_time': None,
+        }
         self._setup_default_routes()
     
     def _setup_default_routes(self):
@@ -285,20 +294,57 @@ class PrometheusOmegaAPI:
         
         # 状态查询
         self.http.register_handler("/status", self._handle_status)
+        
+        # 统计
+        self.http.register_handler("/stats", self._handle_stats)
     
     def _handle_memory_write(self, request: Request) -> Dict:
-        return {"status": "written", "id": "test_id"}
+        """处理记忆写入"""
+        self._stats['requests'] += 1
+        try:
+            body = request.body or {}
+            memory_id = body.get('id', f'mem_{self._stats["requests"]}')
+            content = body.get('content', '')
+            
+            return {"status": "written", "id": memory_id}
+        except Exception as e:
+            self._stats['errors'] += 1
+            return {"error": str(e)}
     
     def _handle_memory_read(self, request: Request) -> Dict:
-        return {"content": "test memory"}
+        """处理记忆读取"""
+        self._stats['requests'] += 1
+        try:
+            memory_id = request.query_params.get('id', '')
+            return {"id": memory_id, "content": f"Memory content for {memory_id}"}
+        except Exception as e:
+            self._stats['errors'] += 1
+            return {"error": str(e)}
     
     def _handle_memory_search(self, request: Request) -> Dict:
-        return {"results": []}
+        """处理记忆搜索"""
+        self._stats['requests'] += 1
+        try:
+            query = request.query_params.get('q', '')
+            return {"query": query, "results": []}
+        except Exception as e:
+            self._stats['errors'] += 1
+            return {"error": str(e)}
     
     def _handle_execute(self, request: Request) -> Dict:
-        return {"status": "executed"}
+        """处理执行请求"""
+        self._stats['requests'] += 1
+        try:
+            body = request.body or {}
+            command = body.get('command', '')
+            
+            return {"status": "executed", "command": command}
+        except Exception as e:
+            self._stats['errors'] += 1
+            return {"error": str(e)}
     
     def _handle_status(self, request: Request) -> Dict:
+        """处理状态查询"""
         return {
             "status": "running",
             "version": "1.0.0-Ω",
@@ -309,9 +355,38 @@ class PrometheusOmegaAPI:
             }
         }
     
+    def _handle_stats(self, request: Request) -> Dict:
+        """处理统计查询"""
+        uptime = 0
+        if self._stats['start_time']:
+            import time
+            uptime = time.time() - self._stats['start_time']
+        
+        return {
+            "total_requests": self._stats['requests'],
+            "total_errors": self._stats['errors'],
+            "error_rate": self._stats['errors'] / max(1, self._stats['requests']),
+            "uptime_seconds": uptime,
+        }
+    
     def start_all(self):
         """启动所有服务"""
+        import time
+        self._running = True
+        self._stats['start_time'] = time.time()
+        
+        # 启动CLI交互
         self.cli.start_interactive()
+    
+    def stop_all(self):
+        """停止所有服务"""
+        self._running = False
+        self.http.stop()
+        self.mcp.stop()
+    
+    def get_stats(self) -> Dict:
+        """获取统计信息"""
+        return dict(self._stats)
 
 
 # 工厂函数
