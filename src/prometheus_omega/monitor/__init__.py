@@ -456,14 +456,18 @@ class Monitor:
 
 class AlertSystem:
     """警报系统"""
-    
+
     def __init__(self):
         self.alerts: List[Alert] = []
-    
+
     def alert(self, level: AlertLevel, message: str):
         self.alerts.append(Alert(level=level, message=message))
         if len(self.alerts) > 100:
             self.alerts.pop(0)
+    
+    def send(self, level: AlertLevel, message: str):
+        """发送警报 (alert的别名)"""
+        self.alert(level, message)
     
     def get_recent(self, count: int = 10) -> List[Alert]:
         return self.alerts[-count:]

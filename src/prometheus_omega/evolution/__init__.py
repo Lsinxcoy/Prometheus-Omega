@@ -129,40 +129,63 @@ class GeneticAlgorithm:
 
 class UCB1Bandit:
     """UCB1 Bandit层选择 - 来自X系统#18"""
-    
-    def __init__(self, layers: List[str]):
-        self.layers = layers
-        self.counts = {l: 0 for l in layers}
-        self.values = {l: 0.0 for l in layers}
+
+    def __init__(self, n_arms: int = 3, arm_names: List[str] = None):
+        """初始化UCB1
+        
+        Args:
+            n_arms: arm数量
+            arm_names: arm名称列表
+        """
+        if arm_names:
+            self.arm_names = arm_names
+        else:
+            self.arm_names = [f"arm_{i}" for i in range(n_arms)]
+        
+        self.counts = {a: 0 for a in self.arm_names}
+        self.values = {a: 0.0 for a in self.arm_names}
         self.total = 0
     
     def select(self) -> str:
-        """选择层"""
-        for layer in self.layers:
-            if self.counts[layer] == 0:
-                self.counts[layer] += 1
+        """UCB1选择"""
+        for arm in self.arm_names:
+            if self.counts[arm] == 0:
+                self.counts[arm] += 1
                 self.total += 1
-                return layer
+                return arm
         
         # UCB1公式
-        best_layer = None
-        best_score = -float('inf')
-        for layer in self.layers:
-            avg = self.values[layer]
-            ucb = math.sqrt(2 * math.log(self.total) / self.counts[layer])
-            score = avg + ucb
-            if score > best_score:
-                best_score = score
-                best_layer = layer
+        best_arm = None
+        best_value = -float('inf')
         
-        self.counts[best_layer] += 1
+        for arm in self.arm_names:
+            avg_value = self.values[arm]
+            exploration = math.sqrt(2 * math.log(self.total) / self.counts[arm])
+            ucb_value = avg_value + exploration
+            
+            if ucb_value > best_value:
+                best_value = ucb_value
+                best_arm = arm
+        
+        self.counts[best_arm] += 1
         self.total += 1
-        return best_layer
+        return best_arm
     
-    def update(self, layer: str, reward: float):
-        """更新"""
-        n = self.counts[layer]
-        self.values[layer] = (self.values[layer] * n + reward) / (n + 1)
+    def update(self, arm: str, reward: float):
+        """更新arm的value
+        
+        Args:
+            arm: arm名称
+            reward: 奖励值
+        """
+        if arm not in self.counts:
+            return
+        
+        n = self.counts[arm]
+        old_value = self.values[arm]
+        
+        # 增量更新
+        self.values[arm] = (old_value * n + reward) / (n + 1)
 
 
 class CGP:
