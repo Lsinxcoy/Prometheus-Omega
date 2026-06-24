@@ -23,16 +23,41 @@ class Individual:
 
 
 class GeneticAlgorithm:
-    """12层遗传算法 - 来自X系统#17"""
+    """12层遗传算法 - 来自X系统#17
+    
+    核心组件:
+    - 种群管理: 初始化、选择(锦标赛)、交叉(单点)、变异(高斯)
+    - 适应度: 评估函数、排序
+    - 演化控制: 终止条件、精英保留、收敛检测
+    """
     
     def __init__(self, population_size: int = 100,
                  mutation_rate: float = 0.1,
-                 crossover_rate: float = 0.7):
+                 crossover_rate: float = 0.7,
+                 elite_size: int = 2,
+                 max_generations: int = 100):
+        """初始化遗传算法
+        
+        Args:
+            population_size: 种群大小
+            mutation_rate: 变异概率
+            crossover_rate: 交叉概率
+            elite_size: 精英数量
+            max_generations: 最大代数
+        """
         self.pop_size = population_size
         self.mut_rate = mutation_rate
         self.cross_rate = crossover_rate
+        self.elite_size = elite_size
+        self.max_gen = max_generations
+        
         self.population: List[Individual] = []
         self.generation = 0
+        self.best_fitness = 0.0
+        self.best_individual = None
+        
+        # 统计历史
+        self._history: List[Dict] = []
     
     def init_population(self, gene_generator: Callable):
         """初始化种群"""

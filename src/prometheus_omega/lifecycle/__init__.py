@@ -153,20 +153,172 @@ class ZeroLLM:
 class DopamineWriteGate:
     """多巴胺写入门控 - 来自X/Y系统#11
     
-    根据内容质量(importance * utility * veracity)和多巴胺水平决定是否允许写入
+    3铁律之一: 根据内容质量(importance * utility * veracity)和多巴胺水平决定是否允许写入
+    
+    工作原理:
+    1. 接收节点的importance/utility/veracity分数
+    2. 计算质量分数 = importance * utility * veracity
+    3. 与当前dopamine_level比较
+    4. 通过后更新dopamine_level(奖励/惩罚机制)
     """
     
-    def __init__(self, threshold: float = 0.3, tau: float = 1.0):
-        self.threshold = threshold
-        self.tau = tau  # 质量阈值
-        self.dopamine_level = 0.5
-    
-    def can_write(self, node) -> bool:
-        """是否可以写入
+    def __init__(self, 
+                 threshold: float = 0.3,
+                 tau: float = 1.0,
+                 decay_rate: float = 0.95,
+                 boost_rate: float = 1.2,
+                 min_dopamine: float = 0.1,
+                 max_dopamine: float = 1.0):
+        """初始化写入门控
         
         Args:
-            node: OmegaNode对象或content_quality浮点数(向后兼容)
+            threshold: 质量阈值, 低于此值拒绝写入
+            tau: 温度参数, 控制随机性
+            decay_rate: 多巴胺衰减率(每次拒绝后)
+            boost_rate: 多巴胺boost率(每次通过后)
+            min_dopamine: 最小多巴胺水平
+            max_dopamine: 最大多巴胺水平
         """
+        self.threshold = threshold
+        self.tau = tau
+        self.decay_rate = decay_rate
+        self.boost_rate = boost_rate
+        self.min_dopamine = min_dopamine
+        self.max_dopamine = max_dopamine
+        
+        # 多巴胺水平: 0.1(低) -> 1.0(高)
+        self.dopamine_level = 0.5
+        
+        # 统计
+        self.total_attempts = 0
+        self.total_approved = 0
+        self.total_rejected = 0
+        
+        # 历史记录
+        self._history: List[Dict] = []
+    
+    def can_write(self, quality_score: float) -> bool:
+        """判断是否允许写入
+        
+        Args:
+            quality_score: 质量分数 (0.0-1.0)
+            
+        Returns:
+            bool: 是否允许写入
+        """
+        import time
+        self.total_attempts += 1
+        
+        # === 输入验证 ===
+        if not isinstance(quality_score, (int, float)):
+            quality_score = 0.0
+        
+        # === 边界检查 ===
+        quality_score = max(0.0, min(1.0, quality_score))
+        
+        # === 核心逻辑 ===
+        # 有效质量 = 原始质量 * 多巴胺调节因子
+        # 低多巴胺时提高阈值, 高多巴胺时降低阈值
+        dopamine_factor = self.dopamine_level  # 0.1-1.0
+        effective_threshold = self.threshold / dopamine_factor
+        
+        # 有效质量需要超过有效阈值
+        can_write = quality_score >= effective_threshold
+        
+        # === 更新多巴胺 ===
+        if can_write:
+            self.dopamine_level = min(
+                self.max_dopamine,
+                self.dopamine_level * self.boost_rate
+            )
+            self.total_approved += 1
+        else:
+            self.dopamine_level = max(
+                self.min_dopamine,
+                self.dopamine_level * self.decay_rate
+            )
+            self.total_rejected += 1
+        
+        # === 记录历史 ===
+        self._history.append({
+            "timestamp": time.time(),
+            "quality_score": quality_score,
+            "threshold": effective_threshold,
+            "dopamine_before": self.dopamine_level,
+            "approved": can_write,
+        })
+        
+        # 保持最近1000条
+        if len(self._history) > 1000:
+            self._history = self._history[-1000:]
+        
+        return can_write
+    
+    def compute_quality(self, importance: float, utility: float, veracity: float) -> float:
+        """计算质量分数
+        
+        质量公式: Q = importance * (0.5 + utility/2) * veracity
+        
+        Args:
+            importance: 重要性 (0.0-1.0)
+            utility: 有用性 (0.0-1.0)
+            veracity: 真实性 (0.0-1.0)
+            
+        Returns:
+            float: 质量分数 (0.0-1.0)
+        """
+        # === 输入验证 ===
+        importance = max(0.0, min(1.0, importance or 0))
+        utility = max(0.0, min(1.0, utility or 0))
+        veracity = max(0.0, min(1.0, veracity or 0.5))
+        
+        # === 质量公式 ===
+        # importance: 基础重要性
+        # utility: 0-1映射到0.5-1.0, 确保utility为0时也有基础分
+        # veracity: 真实性加权
+        quality = importance * (0.5 + utility * 0.5) * veracity
+        
+        return quality
+    
+    def get_dopamine_level(self) -> float:
+        """获取当前多巴胺水平"""
+        return self.dopamine_level
+    
+    def adjust_dopamine(self, delta: float):
+        """手动调整多巴胺水平
+        
+        Args:
+            delta: 调整量 (-1.0到1.0)
+        """
+        self.dopamine_level = max(
+            self.min_dopamine,
+            min(self.max_dopamine, self.dopamine_level + delta)
+        )
+    
+    def get_stats(self) -> Dict:
+        """获取统计信息"""
+        total = self.total_attempts
+        approval_rate = self.total_approved / total if total > 0 else 0
+        
+        return {
+            "dopamine_level": self.dopamine_level,
+            "threshold": self.threshold,
+            "total_attempts": total,
+            "approved": self.total_approved,
+            "rejected": self.total_rejected,
+            "approval_rate": approval_rate,
+        }
+    
+    def reset_stats(self):
+        """重置统计"""
+        self.total_attempts = 0
+        self.total_approved = 0
+        self.total_rejected = 0
+        self._history = []
+    
+    def get_history(self, limit: int = 100) -> List[Dict]:
+        """获取历史记录"""
+        return self._history[-limit:]
         # 向后兼容: 如果是浮点数，直接使用
         if isinstance(node, (int, float)):
             content_quality = node
