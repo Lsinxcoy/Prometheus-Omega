@@ -200,6 +200,46 @@ class Rule:
     priority: int = 0
     enabled: bool = True
     metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def is_applicable(self, context: Dict) -> bool:
+        """检查规则是否适用于当前上下文"""
+        if not self.enabled:
+            return False
+        
+        # 简化条件检查
+        try:
+            # 支持简单的key==value条件
+            if '==' in self.condition:
+                key, value = self.condition.split('==', 1)
+                key = key.strip()
+                value = value.strip().strip('"\'')
+                return str(context.get(key, '')) == value
+            elif '>=' in self.condition:
+                key, value = self.condition.split('>=', 1)
+                return float(context.get(key.strip(), 0)) >= float(value.strip())
+            elif '<=' in self.condition:
+                key, value = self.condition.split('<=', 1)
+                return float(context.get(key.strip(), 0)) <= float(value.strip())
+            elif '>' in self.condition:
+                key, value = self.condition.split('>', 1)
+                return float(context.get(key.strip(), 0)) > float(value.strip())
+            elif '<' in self.condition:
+                key, value = self.condition.split('<', 1)
+                return float(context.get(key.strip(), 0)) < float(value.strip())
+            else:
+                return self.condition in str(context)
+        except (ValueError, KeyError):
+            return False
+    
+    def to_dict(self) -> Dict:
+        return {
+            'rule_id': self.rule_id,
+            'name': self.name,
+            'condition': self.condition,
+            'action': self.action,
+            'priority': self.priority,
+            'enabled': self.enabled,
+        }
 
 
 class DeterministicRuleEngine:
