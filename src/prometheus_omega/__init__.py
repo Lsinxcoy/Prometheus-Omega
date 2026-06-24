@@ -27,7 +27,11 @@ def __getattr__(name):
             def __init__(self, config):
                 self.config = config
         def create_omega_system(config=None):
-            return OmegaCore(Config() if config is None else Config(**config))
+            from prometheus_omega.store import Store
+            cfg = Config() if config is None else Config(**config)
+            core = OmegaCore(cfg)
+            core.store = Store()  # 真实Store，集成宪法门控
+            return core
         return OmegaCore if name == "OmegaCore" else create_omega_system
     
     # Foundation
