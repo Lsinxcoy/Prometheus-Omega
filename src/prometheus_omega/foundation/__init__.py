@@ -904,3 +904,20 @@ class Constraint:
     trigger: str = ""     # P16: when it fires
     verify: str = ""      # P16: how to verify compliance
     severity: float = 1.0
+
+@dataclass
+class FetchResult:
+    """Retrieved memory entries with relevance scores."""
+    nodes: List[Node]
+    scores: List[float]
+    query: str
+    layer: MemoryLayer = MemoryLayer.EPISODIC
+    branch: str = "main"
+
+class TrustLevel(IntEnum):
+    """Trust level for memory nodes."""
+    PENDING = 0
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+    VERIFIED = 4
