@@ -29,6 +29,25 @@ class RetrievalResult:
     score: float
     method: RetrievalMethod
     metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def is_relevant(self, threshold: float = 0.5) -> bool:
+        return self.score >= threshold
+    
+    def to_dict(self) -> Dict:
+        return {
+            'entry_id': self.entry_id,
+            'content': self.content[:100] + '...' if len(self.content) > 100 else self.content,
+            'score': self.score,
+            'method': self.method.value if isinstance(self.method, Enum) else self.method,
+            'metadata': self.metadata,
+        }
+    
+    def relevance_level(self) -> str:
+        if self.score >= 0.8:
+            return 'high'
+        elif self.score >= 0.5:
+            return 'medium'
+        return 'low'
 
 
 class RRF:

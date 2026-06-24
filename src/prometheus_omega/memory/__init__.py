@@ -130,24 +130,41 @@ class FourNetworkFact:
     fact_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     content: str = ""
     network_type: MemoryNetwork = MemoryNetwork.WORLD
-    
+
     # 实体关联
     entity_ids: List[str] = field(default_factory=list)
-    
+
     # 时间和置信度
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     confidence: float = 0.5
     
-    # 标签和来源
-    tags: List[str] = field(default_factory=list)
-    source: str = ""
+    def is_trusted(self, threshold: float = 0.6) -> bool:
+        return self.confidence >= threshold
     
-    # 有效性时间窗口
-    valid_from: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    valid_until: Optional[datetime] = None
+    def get_age(self) -> float:
+        return (datetime.now(timezone.utc) - self.created_at).total_seconds()
     
-    # 元数据
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    def to_dict(self) -> Dict:
+        return {
+            'fact_id': self.fact_id,
+            'content': self.content[:100] + '...' if len(self.content) > 100 else self.content,
+            'network_type': self.network_type.value if isinstance(self.network_type, Enum) else self.network_type,
+            'entity_ids': self.entity_ids,
+            'confidence': self.confidence,
+            'created_at': self.created_at.isoformat(),
+        }
+    
+    def add_entity(self, entity_id: str):
+        if entity_id not in self.entity_ids:
+            self.entity_ids.append(entity_id)
+
+
+class MemoryNetwork(Enum):
+    """四网络类型"""
+    WORLD = "world"
+    EXPERIENCES = "experiences"
+    SUMMARIES = "summaries"
+    BELIEFS = "beliefs"
 
 
 class FourNetworkMemory:

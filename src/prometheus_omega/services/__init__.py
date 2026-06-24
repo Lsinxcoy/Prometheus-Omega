@@ -28,6 +28,19 @@ class ServiceConfig:
     cors_enabled: bool = True
     max_connections: int = 100
     timeout: int = 30
+    
+    def get_address(self) -> str:
+        return f"{self.host}:{self.port}"
+    
+    def to_dict(self) -> Dict:
+        return {
+            'host': self.host,
+            'port': self.port,
+            'service_type': self.service_type.value if isinstance(self.service_type, Enum) else self.service_type,
+            'cors_enabled': self.cors_enabled,
+            'max_connections': self.max_connections,
+            'timeout': self.timeout,
+        }
 
 
 @dataclass
@@ -38,6 +51,18 @@ class Request:
     headers: Dict[str, str] = field(default_factory=dict)
     body: Optional[Dict] = None
     query_params: Dict[str, str] = field(default_factory=dict)
+    
+    def get_header(self, key: str, default: str = "") -> str:
+        return self.headers.get(key, default)
+    
+    def get_query(self, key: str, default: str = "") -> str:
+        return self.query_params.get(key, default)
+    
+    def is_get(self) -> bool:
+        return self.method.upper() == "GET"
+    
+    def is_post(self) -> bool:
+        return self.method.upper() == "POST"
 
 
 @dataclass

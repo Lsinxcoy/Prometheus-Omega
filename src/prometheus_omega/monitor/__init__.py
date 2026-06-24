@@ -15,9 +15,26 @@ class AlertLevel(Enum):
 
 @dataclass
 class Alert:
+    """警报"""
     level: AlertLevel
     message: str
     timestamp: float = field(default_factory=time.time)
+    
+    def is_critical(self) -> bool:
+        return self.level == AlertLevel.CRITICAL
+    
+    def is_error(self) -> bool:
+        return self.level in (AlertLevel.ERROR, AlertLevel.CRITICAL)
+    
+    def to_dict(self) -> Dict:
+        return {
+            'level': self.level.value,
+            'message': self.message,
+            'timestamp': self.timestamp,
+        }
+    
+    def age(self) -> float:
+        return time.time() - self.timestamp
 
 
 class ZScoreAnomaly:
