@@ -670,23 +670,42 @@ class Store:
         return value
     
     def set(self, key: str, value: Any, use_cache: bool = True) -> bool:
-        """设置值"""
-        # 安全验证
-        if not self.verification.verify(str(value)):
-            logger.warning(f"Verification failed for key: {key}")
-            return False
+            """设置值 - 受宪法机制保护
         
-        # 速率限制
-        if not self._rate_limiter.allow(key):
-            logger.warning(f"Rate limit exceeded for key: {key}")
-            return False
+            Args:
+                key: 键名
+                value: 值
+                use_cache: 是否使用缓存
+            
+            Returns:
+                bool: 是否成功
+            """
+            # 宪法第1条: Truthfulness - 多巴胺写入门控
+            content_str = str(value)
+            importance = len(content_str) / 1000.0
+            utility = 0.5
+            veracity = 0.8 if len(content_str) > 10 else 0.3
         
-        result = self._backend.set(key, value)
+            if not self.write_gate.can_write(importance, utility, veracity):
+                logger.warning(f"Dopamine gate blocked write for key: {key}")
+                return False
         
-        if use_cache and self._cache and result:
-            self._cache.set(key, value)
+            # 宪法第3条: 安全验证
+            if not self.verification.verify(str(value)):
+                logger.warning(f"Verification failed for key: {key}")
+                return False
         
-        return result
+            # 速率限制
+            if not self._rate_limiter.allow(key):
+                logger.warning(f"Rate limit exceeded for key: {key}")
+                return False
+        
+            result = self._backend.set(key, value)
+        
+            if use_cache and self._cache and result:
+                self._cache.set(key, value)
+        
+            return result
     
     def delete(self, key: str) -> bool:
         """删除值"""
