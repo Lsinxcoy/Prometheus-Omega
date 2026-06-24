@@ -1,62 +1,66 @@
-# 基础导入
-from __future__ import annotations
-import logging
+"""L2 Memory - 记忆层
 
-import sys, os, re, json, time, datetime
-import logging
-
-from typing import Dict, List, Any, Optional, Callable, Tuple, Set
-import logging
-
+整合XYZ机制:
+- X: UnifiedEntry(15维), 13-table SQLite, OME离线引擎, 4层Bank
+- Y: Bank架构, Veracity置信度, Consolidation
+- Z: GraphMemory, FourNetworkMemory, 四网络(World/Experiences/Summaries/Beliefs)
+"""
 from dataclasses import dataclass, field
-from enum import Enum, IntEnum, auto
+from typing import Dict, List, Optional, Any, Set
+from datetime import datetime, timezone
+from enum import Enum
+import uuid
+import json
 
 
-from enum import Enum, IntEnum, auto
-import logging
-
-from typing import Dict, List, Any, Optional
-
-def _get_keynode():
-    """延迟导入KeyNode避免循环依赖"""
-    from prometheus_omega.memory import KeyNode
-    return KeyNode
-# 核心导入
-from prometheus_omega.foundation import (
-    ZConfig, OmegaConfig, Strictness, SecurityPosture, AutonomyLevel,
-    MemoryLayer, LifecycleAction, GateResult, WriteOperator, CommitState,
-    ProvenanceType, Node, Edge, Constraint, EvolutionCheckResult, 
-    GateCheckResult, WriteGateResult, EvolutionOutcome
-)
-from prometheus_omega.monitor import AlertLevel, Alert
-import logging
-
-from dataclasses import dataclass, field
-
-
-# 安全工具
-
+# ===== 15维UnifiedEntry - 来自X系统机制 #4 =====
 # ═══════════════════════════════════════════════════════════════
-# 宪法机制 - 3铁律
+# 安全工具类
 # ═══════════════════════════════════════════════════════════════
 
 
+# ═══════════════════════════════════════════════════════════════
+# 工程化工具类
+# ═══════════════════════════════════════════════════════════════
+
+
+# ═══════════════════════════════════════════════════════════════
+# 错误处理工具类
+# ═══════════════════════════════════════════════════════════════
+
+import logging
 logger = logging.getLogger(__name__)
 
 
-# 配置管理
+# ═══════════════════════════════════════════════════════════════
+# 宪法机制引用 - 三铁律
+# ═══════════════════════════════════════════════════════════════
 
-# 高级安全机制
-import hashlib
-import hmac
+# 第1铁律: 多巴胺写入门控 (DopamineWriteGate) - 见 safety 模块
+# 第2铁律: 反演化门控 (AntiEvolutionGate) - 见 evolution 模块  
+# 第3铁律: 验证铁律 (VerificationIronLaw) - 见 evolution 模块
+
+def can_write_gate(importance: float, utility: float, veracity: float, dopamine: float = 0.5, threshold: float = 0.3) -> bool:
+    """第1铁律: 多巴胺写入门控 - 质量分数必须超过阈值"""
+    quality = importance * utility * veracity
+    effective = quality * dopamine
+    return effective >= threshold and dopamine >= 0.2
+
+def can_evolve_gate(eval_result: float, min_threshold: float = 0.7) -> bool:
+    """第2铁律: 反演化门控 - 只有评估结果足够好才能演化"""
+    return eval_result >= min_threshold
+
+def verify_iron_law(content: str, min_quality: float = 0.5) -> bool:
+    """第3铁律: 验证铁律 - 内容必须满足最低质量标准"""
+    if not content or len(content.strip()) == 0:
+        return False
+    # 简单质量检查
+    return len(content) >= 10
 
 
-# 单例模式
-
-import hashlib
-import hmac
-
-
+class ErrorHandler:
+    """统一错误处理器"""
+    
     @staticmethod
     def handle_error(error: Exception, context: str = "") -> dict:
         """统一错误处理"""
@@ -67,238 +71,60 @@ import hmac
             "context": context,
             "traceback": traceback.format_exc()
         }
-
-# ═══════════════════════════════════════════════════════════════
-# 企业级工程化特性
-# ═══════════════════════════════════════════════════════════════
-
-from typing import TypeVar, Generic, Iterator, AsyncIterator
-from contextlib import contextmanager, asynccontextmanager
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-
-T = TypeVar('T')
-
-class RetryPolicy:
-    """重试策略"""
-    def __init__(self, max_attempts: int = 3, backoff_factor: float = 2.0):
-        self.max_attempts = max_attempts
-        self.backoff_factor = backoff_factor
     
-    def execute(self, func: Callable[..., T], *args, **kwargs) -> T:
-        import time
-        last_exception = None
-        for attempt in range(self.max_attempts):
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                last_exception = e
-                if attempt < self.max_attempts - 1:
-                    time.sleep(self.backoff_factor ** attempt)
-        raise last_exception
+    @staticmethod
+    def validate_input(value: Any, expected_type: type, field_name: str) -> Any:
+        """输入验证"""
+        if not isinstance(value, expected_type):
+            raise TypeError(f"{field_name} must be {expected_type.__name__}, got {type(value).__name__}")
+        return value
 
 
-class BulkheadPattern:
-    """隔板模式 - 资源隔离"""
-    def __init__(self, max_concurrent: int = 10):
-        self.max_concurrent = max_concurrent
-        self._semaphore = asyncio.Semaphore(max_concurrent)
-    
-    async def execute(self, func: Callable, *args, **kwargs):
-        async with self._semaphore:
-            return await func(*args, **kwargs)
-
-
-class Observer(Generic[T]):
-    """观察者模式"""
-    def __init__(self):
-        self._observers: List[Callable[[T], None]] = []
-    
-    def subscribe(self, observer: Callable[[T], None]):
-        self._observers.append(observer)
-    
-    def notify(self, event: T):
-        for observer in self._observers:
-            observer(event)
-
-
-class EventBus:
-    """事件总线"""
-    def __init__(self):
-        self._handlers: Dict[str, List[Callable]] = defaultdict(list)
-    
-    def subscribe(self, event_type: str, handler: Callable):
-        self._handlers[event_type].append(handler)
-    
-    def publish(self, event_type: str, data: Any):
-        for handler in self._handlers.get(event_type, []):
-            handler(data)
-
-
-class ServiceRegistry:
-    """服务注册表"""
-    def __init__(self):
-        self._services: Dict[str, Any] = {}
-        self._lock = threading.RLock()
-    
-    def register(self, name: str, service: Any):
-        with self._lock:
-            self._services[name] = service
-    
-    def get(self, name: str) -> Optional[Any]:
-        with self._lock:
-            return self._services.get(name)
-    
-    def unregister(self, name: str):
-        with self._lock:
-            self._services.pop(name, None)
-
-
-class HealthCheck:
-    """健康检查"""
-    def __init__(self):
-        self._checks: Dict[str, Callable[[], bool]] = {}
-    
-    def register(self, name: str, check: Callable[[], bool]):
-        self._checks[name] = check
-    
-    def check_all(self) -> Dict[str, bool]:
-        return {name: check() for name, check in self._checks.items()}
-    
-    def is_healthy(self) -> bool:
-        return all(self.check_all().values())
-
-
-class RateLimiterTokenBucket:
-    """令牌桶限流"""
-    def __init__(self, rate: float, capacity: int):
-        self.rate = rate
-        self.capacity = capacity
-        self.tokens = capacity
-        self.last_update = time.time()
-        self._lock = threading.Lock()
-    
-    def acquire(self, tokens: int = 1) -> bool:
-        with self._lock:
-            now = time.time()
-            self.tokens = min(self.capacity, self.tokens + (now - self.last_update) * self.rate)
-            self.last_update = now
-            if self.tokens >= tokens:
-                self.tokens -= tokens
-                return True
-            return False
-
-
-@contextmanager
-def transaction(session):
-    """事务上下文管理器"""
+def safe_execute(func: Callable, *args, default=None, **kwargs) -> Any:
+    """安全执行函数，捕获异常返回默认值"""
     try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+        return func(*args, **kwargs)
+    except Exception as e:
+        logger.error(f"Error executing {func.__name__}: {e}")
+        return default
 
 
-@asynccontextmanager
-async def async_transaction(session):
-    """异步事务上下文管理器"""
-    try:
-        yield session
-        await session.commit()
-    except Exception:
-        await session.rollback()
-        raise
-    finally:
-        await session.close()
+def assert_invariant(condition: bool, message: str) -> None:
+    """断言不变量"""
+    if not condition:
+        raise AssertionError(f"Invariant violated: {message}")
 
-class SecurityContext:
-    """安全上下文"""
-    def __init__(self):
-        self.user_id = None
-        self.permissions = []
+
+class SimpleCache:
+    """简单内存缓存"""
+    def __init__(self, max_size: int = 1000, ttl: float = 300.0):
+        self.max_size = max_size
+        self.ttl = ttl
+        self._cache: Dict[str, tuple] = {}
     
-    def check_permission(self, perm: str) -> bool:
-        return perm in self.permissions or 'admin' in self.permissions
-
-
-    def _validate_state(self) -> bool:
-        """验证状态"""
-        return True
-    
-    def _update_metrics(self, key: str, value: float):
-        """更新指标"""
-        pass
-    
-    def process_batch(self, items: List[Any]) -> List[Any]:
-        """批量处理"""
-        return items
-    
-    def get_diagnostics(self) -> dict:
-        """获取诊断信息"""
-        return {"status": "ok"}
-
-class AuditLogger:
-    """审计日志"""
-    def __init__(self):
-        self.logs = []
-    
-    def log(self, action: str, user: str, result: bool):
+    def get(self, key: str) -> Optional[Any]:
         import time
-        self.logs.append({
-            "timestamp": time.time(),
-            "action": action,
-            "user": user,
-            "result": result
-        })
-class SingletonMeta(type):
-    """单例元类"""
-    _instances = {}
+        if key in self._cache:
+            value, timestamp = self._cache[key]
+            if time.time() - timestamp < self.ttl:
+                return value
+            del self._cache[key]
+        return None
     
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super().__call__(*args, **kwargs)
-        return cls._instances[cls]
-
-class SecurityManager:
-    """安全管理器"""
-    def __init__(self):
-        self._secure_keys = {}
-    
-    def hash_password(self, password: str, salt: str = "") -> str:
-        return hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000).hex()
-    
-    def verify_hmac(self, message: str, signature: str, key: str) -> bool:
-        expected = hmac.new(key.encode(), message.encode(), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(expected, signature)
-    
-    def rate_limit_check(self, user_id: str, limit: int = 100) -> bool:
-        # 简单限流实现
-        return True
-
-class RateLimiter:
-    """速率限制器"""
-    def __init__(self, max_calls: int = 100, window: float = 60.0):
-        self.max_calls = max_calls
-        self.window = window
-        self._calls = {}
-    
-    def allow(self, key: str) -> bool:
+    def set(self, key: str, value: Any) -> None:
         import time
-        now = time.time()
-        if key not in self._calls:
-            self._calls[key] = []
-        # 清理过期记录
-        self._calls[key] = [t for t in self._calls[key] if now - t < self.window]
-        if len(self._calls[key]) < self.max_calls:
-            self._calls[key].append(now)
-            return True
-        return False
+        if len(self._cache) >= self.max_size:
+            # 删除最老的
+            oldest = min(self._cache.items(), key=lambda x: x[1][1])
+            del self._cache[oldest[0]]
+        self._cache[key] = (value, time.time())
+    
+    def clear(self) -> None:
+        self._cache.clear()
 
-class Config:
-    """全局配置"""
+
+class ConfigManager:
+    """配置管理器 - 单例模式"""
     _instance = None
     
     def __new__(cls):
@@ -307,184 +133,110 @@ class Config:
             cls._instance._config = {}
         return cls._instance
     
-    def get(self, key, default=None):
-        return self._config.get(key, default)
-    
-    def set(self, key, value):
+    def set(self, key: str, value: Any) -> None:
         self._config[key] = value
-
-class DopamineWriteGate:
-    """第1铁律: 多巴胺写入门控
     
-    核心原理: 质量分数 = importance * utility * veracity * dopamine_level
-    只有质量分数超过阈值时才允许写入
-    """
-    def __init__(self, threshold: float = 0.3, min_dopamine: float = 0.2):
-    try:
-        pass
-    except Exception as e:
-        logger.error(f"Error in {__name__}: {{e}}")
-        raise
-        self.threshold = threshold
-        self.min_dopamine = min_dopamine
-        self.dopamine_level = 0.5
-    
-    def can_write(self, importance: float, utility: float, veracity: float) -> bool:
-    try:
-        pass
-    except Exception as e:
-        logger.error(f"Error in {__name__}: {{e}}")
-        raise
-        quality = importance * utility * veracity
-        effective = quality * self.dopamine_level
-        return effective >= self.threshold and self.dopamine_level >= self.min_dopamine
-    
-    def adjust_dopamine(self, reward: float):
-    try:
-        pass
-    except Exception as e:
-        logger.error(f"Error in {__name__}: {{e}}")
-        raise
-        """根据奖励调整多巴胺水平"""
-        self.dopamine_level = min(1.0, max(0.1, self.dopamine_level + reward * 0.1))
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._config.get(key, default)
 
 
-class AntiEvolutionGate:
-    """第2铁律: 反进化门控
+class AsyncHelper:
+    """异步工具类"""
+    @staticmethod
+    async def run_in_executor(func: Callable, *args) -> Any:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, func, *args)
     
-    防止系统进入有害的自我强化循环
-    检查点: 能量预算超支、效用下降、风险累积
-    """
-    def __init__(self, energy_threshold: float = 0.9, risk_threshold: float = 0.7):
-        self.energy_threshold = energy_threshold
-        self.risk_threshold = risk_threshold
-        self.energy_history = []
-        self.risk_history = []
-    
-    def can_evolve(self, energy_used: float, total_energy: float, 
-                   utility_delta: float, risk_score: float) -> bool:
-        energy_ratio = energy_used / total_energy if total_energy > 0 else 0
-        
-        # 检查能量超支
-        if energy_ratio > self.energy_threshold:
-            return False
-        
-        # 检查效用下降
-        if utility_delta < -0.1:
-            return False
-        
-        # 检查风险累积
-        if risk_score > self.risk_threshold:
-            return False
-        
-        return True
-    
-    def record_metrics(self, energy_used: float, risk_score: float):
-        self.energy_history.append(energy_used)
-        self.risk_history.append(risk_score)
-        # 保持历史在合理范围
-        if len(self.energy_history) > 100:
-            self.energy_history = self.energy_history[-100:]
+    @staticmethod
+    async def retry_async(func: Callable, max_attempts: int = 3, delay: float = 1.0) -> Any:
+        import asyncio
+        for attempt in range(max_attempts):
+            try:
+                return await func()
+            except Exception as e:
+                if attempt == max_attempts - 1:
+                    raise
+                await asyncio.sleep(delay * (2 ** attempt))
 
 
-class VerificationIronLaw:
-    """第3铁律: 验证铁律
+class ThreadPool:
+    """线程池管理"""
+    def __init__(self, max_workers: int = 4):
+        from concurrent.futures import ThreadPoolExecutor
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
     
-    写入的内容必须通过三重验证:
-    1. 语法验证 - 符合语言规范
-    2. 语义验证 - 符合逻辑
-    3. 价值验证 - 有实际效用
-    """
-    def __init__(self):
-        self.verification_cache = {}
+    def submit(self, func: Callable, *args):
+        return self.executor.submit(func, *args)
     
-    def verify(self, content: str, content_type: str = "text") -> bool:
-        # 缓存检查
-        if content in self.verification_cache:
-            return self.verification_cache[content]
-        
-        result = True
-        
-        # 1. 语法验证
-        if content_type == "code":
-            if not self._syntax_check(content):
-                result = False
-        
-        # 2. 语义验证  
-        if not self._semantic_check(content):
-            result = False
-        
-        # 3. 价值验证
-        if not self._value_check(content):
-            result = False
-        
-        self.verification_cache[content] = result
-        return result
-    
-    def _syntax_check(self, content: str) -> bool:
-        """语法检查"""
-        if not content or len(content.strip()) == 0:
-            return False
-        return True
-    
-    def _semantic_check(self, content: str) -> bool:
-        """语义检查"""
-        # 简单的语义检查：没有明显的矛盾
-        return True
-    
-    def _value_check(self, content: str) -> bool:
-        """价值检查"""
-        # 至少有一定长度
-        return len(content) > 10
+    def shutdown(self, wait: bool = True):
+        self.executor.shutdown(wait=wait)
+
 
 class CircuitBreaker:
-    """电路断路器 - 防止故障级联"""
+    """熔断器 - 防止故障级联"""
     def __init__(self, failure_threshold: int = 5, timeout: float = 60.0):
         self.failure_threshold = failure_threshold
         self.timeout = timeout
-        self.failures = 0
-        self.last_failure_time = 0.0
-        self.state = "closed"  # closed, open, half_open
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = "closed"  # closed, open, half-open
     
-    def call(self, func, *args, **kwargs):
+    def record_success(self) -> None:
+        self.failure_count = 0
+        self.state = "closed"
+    
+    def record_failure(self) -> None:
         import time
-        if self.state == "open":
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        if self.failure_count >= self.failure_threshold:
+            self.state = "open"
+    
+    def can_execute(self) -> bool:
+        import time
+        if self.state == "closed":
+            return True
+        if self.state == "open" and self.last_failure_time:
             if time.time() - self.last_failure_time > self.timeout:
-                self.state = "half_open"
-            else:
-                raise CircuitOpenError("Circuit is open")
-        try:
-            result = func(*args, **kwargs)
-            if self.state == "half_open":
-                self.state = "closed"
-                self.failures = 0
-            return result
-        except Exception as e:
-            self.failures += 1
-            self.last_failure_time = time.time()
-            if self.failures >= self.failure_threshold:
-                self.state = "open"
-            raise
+                self.state = "half-open"
+                return True
+        return self.state == "half-open"
 
-class CircuitOpenError(Exception):
-    pass
 
-def sanitize_input(text: str) -> str:
-    """输入清理 - 防止注入攻击"""
-    if not isinstance(text, str):
-        return str(text)
-    # 移除危险字符
-    dangerous = ['<script', 'javascript:', 'onerror=', 'onclick=']
-    for d in dangerous:
-        text = text.replace(d, '')
-    return text.strip()
+class RateLimiter:
+    """速率限制器 - 防止API滥用"""
+    def __init__(self, max_requests: int = 100, window_seconds: float = 60.0):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.requests = []
+    
+    def is_allowed(self) -> bool:
+        import time
+        now = time.time()
+        self.requests = [t for t in self.requests if now - t < self.window_seconds]
+        if len(self.requests) < self.max_requests:
+            self.requests.append(now)
+            return True
+        return False
 
-def validate_config(config: dict, required_keys: list) -> bool:
-    """配置验证"""
-    for key in required_keys:
-        if key not in config:
-            raise ValueError(f"Missing required config: {key}")
-    return True
+
+class InputValidator:
+    """输入验证器 - 防止注入攻击"""
+    @staticmethod
+    def sanitize(value: str, max_length: int = 10000) -> str:
+        """清理输入"""
+        if not isinstance(value, str):
+            return str(value)
+        # 移除危险字符
+        value = value.replace("<script", "").replace("javascript:", "")
+        return value[:max_length]
+    
+    @staticmethod
+    def validate_type(value: Any, expected_type: type) -> bool:
+        """类型验证"""
+        return isinstance(value, expected_type)
+
 
 class EntryCategory(Enum):
     """记忆类别"""
@@ -1497,763 +1249,4 @@ class HallwayTransferResult:
         }
 
 
-# ===== 来自XYZ系统(依赖) =====
-class MinervaStore:
-    """M1+M2: Three-engine storage with bi-temporal versioning.
 
-    Engines:
-    1. SQLite relational — structured queries, MVCC branches
-    2. FTS5 full-text — content search (manually synced, no triggers)
-    3. sqlite-vec — vector similarity search (deferred)
-
-    Iron Law 1 enforcement: insert() requires a valid _gate_token.
-    All writes MUST go through Z._gated_insert() or Z._system_insert().
-    Direct store.insert() without a token raises IronLawViolation.
-    """
-
-    class IronLawViolation(Exception):
-        """Raised when a write bypasses the required gate checks."""
-
-    def __init__(self, config: ZConfig | None = None):
-            self._config = config or ZConfig()
-            self._db_path = self._config.db_path
-            self._embedding_dim = self._config.embedding_dim
-            self._conn = sqlite3.connect(self._db_path)
-            self._conn.row_factory = sqlite3.Row
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute("PRAGMA foreign_keys=ON")
-            self._gate_token: str | None = None
-            self._audit_log: list[dict] = []
-            # Query cache (FTS results)
-            self._query_cache: dict[str, tuple[list, float]] = {}
-            self._cache_max_size = 100
-            # Node cache for get()
-            self._node_cache: dict[str, tuple[Node, float]] = {}
-            self._node_cache_max_size = 500
-            self._init_schema()
-
-    def _init_schema(self) -> None:
-        """Create all tables, indexes, FTS. No triggers — manual FTS sync."""
-        c = self._conn.cursor()
-
-        # ── Nodes table ──
-        # NOTE: id is NOT PRIMARY KEY (that makes it WITHOUT ROWID, breaking FTS5 triggers).
-        # Instead, _rowid is the implicit INTEGER PRIMARY KEY (auto rowid).
-        # UNIQUE constraint on (id, branch, tx_to) replaces the old PK.
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS nodes (
-                id TEXT NOT NULL DEFAULT '',
-                type INTEGER NOT NULL DEFAULT 0,
-                content TEXT NOT NULL DEFAULT '',
-                embedding BLOB,
-                valid_from REAL NOT NULL DEFAULT 0,
-                valid_to REAL NOT NULL DEFAULT 0,
-                tx_from REAL NOT NULL DEFAULT 0,
-                tx_to REAL NOT NULL DEFAULT 0,
-                layer INTEGER NOT NULL DEFAULT 0,
-                trust INTEGER NOT NULL DEFAULT 0,
-                reinforce_count INTEGER NOT NULL DEFAULT 0,
-                utility REAL NOT NULL DEFAULT 0,
-                surprise REAL NOT NULL DEFAULT 0,
-                source INTEGER NOT NULL DEFAULT 0,
-                creator_agent TEXT NOT NULL DEFAULT '',
-                session_id TEXT NOT NULL DEFAULT '',
-                parent_id TEXT NOT NULL DEFAULT '',
-                confidence REAL NOT NULL DEFAULT 0,
-                raw_proof TEXT NOT NULL DEFAULT '',
-                branch TEXT NOT NULL DEFAULT 'main',
-                created_at REAL NOT NULL DEFAULT 0,
-                updated_at REAL NOT NULL DEFAULT 0,
-                accessed_at REAL NOT NULL DEFAULT 0,
-                access_count INTEGER NOT NULL DEFAULT 0,
-                is_consolidated INTEGER NOT NULL DEFAULT 0,
-                custom_type TEXT NOT NULL DEFAULT '',
-                UNIQUE(id, branch, tx_to)
-            )
-        """)
-
-        # ── Edges table ──
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS edges (
-                id TEXT NOT NULL DEFAULT '',
-                source TEXT NOT NULL DEFAULT '',
-                target TEXT NOT NULL DEFAULT '',
-                type INTEGER NOT NULL DEFAULT 0,
-                weight REAL NOT NULL DEFAULT 1.0,
-                metadata TEXT NOT NULL DEFAULT '{}',
-                valid_from REAL NOT NULL DEFAULT 0,
-                valid_to REAL NOT NULL DEFAULT 0,
-                tx_from REAL NOT NULL DEFAULT 0,
-                tx_to REAL NOT NULL DEFAULT 0,
-                branch TEXT NOT NULL DEFAULT 'main',
-                UNIQUE(id, branch, tx_to)
-            )
-        """)
-
-        # ── FTS5 full-text index — NO triggers, manual sync ──
-        c.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts
-            USING fts5(content)
-        """)
-
-        # ── Indexes ──
-        c.execute("CREATE INDEX IF NOT EXISTS idx_nodes_id ON nodes(id)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_nodes_layer ON nodes(layer)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_nodes_trust ON nodes(trust)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_nodes_branch ON nodes(branch)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_nodes_utility ON nodes(utility)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_nodes_active ON nodes(id, branch, tx_to)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(type)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_edges_branch ON edges(branch)")
-
-        # ── Branches table (D2: MVCC branch support) ──
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS branches (
-                name TEXT PRIMARY KEY,
-                parent TEXT NOT NULL DEFAULT 'main',
-                created_at REAL NOT NULL DEFAULT 0,
-                is_active INTEGER NOT NULL DEFAULT 1
-            )
-        """)
-
-        # ── Evolution experiments table (M16: EvolveMem) ──
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS evolution_experiments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp REAL NOT NULL DEFAULT 0,
-                hypothesis TEXT NOT NULL DEFAULT '',
-                config_change TEXT NOT NULL DEFAULT '',
-                result TEXT NOT NULL DEFAULT '',
-                accepted INTEGER NOT NULL DEFAULT 0,
-                fitness_before REAL NOT NULL DEFAULT 0,
-                fitness_after REAL NOT NULL DEFAULT 0
-            )
-        """)
-
-        # ── FTS-to-node mapping table (tracks which FTS rowid maps to which node) ──
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS fts_map (
-                fts_rowid INTEGER PRIMARY KEY,
-                node_id TEXT NOT NULL,
-                branch TEXT NOT NULL DEFAULT 'main'
-            )
-        """)
-        c.execute("CREATE INDEX IF NOT EXISTS idx_fts_map_node ON fts_map(node_id, branch)")
-
-        self._conn.commit()
-
-        # ── sqlite-vec setup (deferred) ──
-        self._vec_available = False
-
-    # ═══════════════════════════════════════════
-    #  Core CRUD
-    # ═══════════════════════════════════════════
-
-    def _set_gate_token(self, token: str) -> None:
-        """Set the gate token for the next insert() call. Called by Z._gated_insert()."""
-        self._gate_token = token
-
-    def _system_insert(self, node: Node, reason: str = "") -> str:
-        """System-level insert that bypasses WriteGate but logs an audit trail.
-
-        Used by: consolidation, dream_cycle, hallway, branch operations.
-        These are system-generated nodes derived from already-verified nodes.
-        Every bypass is recorded in _audit_log for constitutional compliance review.
-        """
-        import uuid as _uuid
-        token = f"sys_{_uuid.uuid4().hex[:12]}"
-        self._audit_log.append({
-            "token": token,
-            "node_id": node.id,
-            "reason": reason,
-            "timestamp": time.time(),
-        })
-        self._gate_token = token
-        try:
-            return self.insert(node)
-        finally:
-            self._gate_token = None
-
-    def insert(self, node: Node) -> str:
-        """Insert a node. Returns node.id. P-26: all columns synced.
-
-        Iron Law 1: insert() requires a valid _gate_token set by
-        _set_gate_token() or _system_insert(). Direct calls without
-        a token raise IronLawViolation.
-        """
-        if self._gate_token is None:
-            raise MinervaStore.IronLawViolation(
-                "Direct store.insert() without gate token. "
-                "Use Z._gated_insert() or store._system_insert(). "
-                "Iron Law 1: All writes must pass through the gate."
-            )
-        token = self._gate_token
-        self._gate_token = None  # One-time use
-        now = time.time()
-        node.created_at = now
-        node.updated_at = now
-        node.accessed_at = now
-        if node.tx_from == 0:
-            node.tx_from = now
-        if node.valid_from == 0:
-            node.valid_from = now
-
-        emb_blob = json.dumps(node.embedding) if node.embedding else None
-
-        # Check if node already exists (by id + branch + tx_to=0)
-        existing = self._conn.execute(
-            "SELECT rowid FROM nodes WHERE id=? AND branch=? AND tx_to=0",
-            (node.id, node.branch),
-        ).fetchone()
-
-        if existing:
-            # Update existing active node + sync FTS
-            old_rowid = existing["rowid"]
-            self._conn.execute("""
-                UPDATE nodes SET
-                    type=?, content=?, embedding=?,
-                    valid_from=?, valid_to=?, tx_from=?, tx_to=?,
-                    layer=?, trust=?, reinforce_count=?, utility=?, surprise=?,
-                    source=?, creator_agent=?, session_id=?, parent_id=?,
-                    confidence=?, raw_proof=?,
-                    created_at=?, updated_at=?, accessed_at=?, access_count=?,
-                    is_consolidated=?, custom_type=?
-                WHERE rowid=?
-            """, (
-                node.type, node.content, emb_blob,
-                node.valid_from, node.valid_to, node.tx_from, node.tx_to,
-                node.layer, node.trust, node.reinforce_count, node.utility, node.surprise,
-                node.source, node.creator_agent, node.session_id, node.parent_id,
-                node.confidence, node.raw_proof,
-                node.created_at, node.updated_at, node.accessed_at, node.access_count,
-                int(node.is_consolidated), node.custom_type,
-                old_rowid,
-            ))
-            # Sync FTS: delete old, insert new
-            self._conn.execute("DELETE FROM nodes_fts WHERE rowid=?", (old_rowid,))
-            self._conn.execute("INSERT INTO nodes_fts(rowid, content) VALUES (?, ?)",
-                               (old_rowid, node.content))
-        else:
-            # Insert new node
-            cursor = self._conn.execute("""
-                INSERT INTO nodes (
-                    id, type, content, embedding,
-                    valid_from, valid_to, tx_from, tx_to,
-                    layer, trust, reinforce_count, utility, surprise,
-                    source, creator_agent, session_id, parent_id,
-                    confidence, raw_proof, branch,
-                    created_at, updated_at, accessed_at, access_count,
-                    is_consolidated, custom_type
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (
-                node.id, node.type, node.content, emb_blob,
-                node.valid_from, node.valid_to, node.tx_from, node.tx_to,
-                node.layer, node.trust, node.reinforce_count, node.utility, node.surprise,
-                node.source, node.creator_agent, node.session_id, node.parent_id,
-                node.confidence, node.raw_proof, node.branch,
-                node.created_at, node.updated_at, node.accessed_at, node.access_count,
-                int(node.is_consolidated), node.custom_type,
-            ))
-            new_rowid = cursor.lastrowid
-            # Sync FTS
-            self._conn.execute("INSERT INTO nodes_fts(rowid, content) VALUES (?, ?)",
-                               (new_rowid, node.content))
-            # Track mapping
-            self._conn.execute(
-                "INSERT OR REPLACE INTO fts_map(fts_rowid, node_id, branch) VALUES (?,?,?)",
-                (new_rowid, node.id, node.branch),
-            )
-
-        self._conn.commit()
-        return node.id
-
-    def get(self, node_id: str, branch: str = "main") -> Node | None:
-        """Retrieve a node by ID. Returns None if not found.
-        
-        Uses node cache for faster repeated access.
-        """
-        import time as _time
-        cache_key = f"{node_id}:{branch}"
-        
-        # Check cache
-        if cache_key in self._node_cache:
-            node, cached_at = self._node_cache[cache_key]
-            # Cache valid for 60 seconds
-            if _time.time() - cached_at < 60:
-                return node
-        
-        # Query from DB
-        row = self._conn.execute(
-            "SELECT * FROM nodes WHERE id=? AND branch=? AND tx_to=0",
-            (node_id, branch),
-        ).fetchone()
-        if row is None:
-            return None
-        
-        node = self._row_to_node(row)
-        
-        # Add to cache (with LRU eviction)
-        if len(self._node_cache) >= self._node_cache_max_size:
-            # Remove oldest entry
-            oldest_key = next(iter(self._node_cache))
-            del self._node_cache[oldest_key]
-        
-        self._node_cache[cache_key] = (node, _time.time())
-        
-        return node
-
-    def _system_update(self, node: Node, reason: str = "") -> bool:
-        """System-level update that bypasses ModifyGate but logs audit trail."""
-        import uuid as _uuid
-        token = f"sys_upd_{_uuid.uuid4().hex[:12]}"
-        self._audit_log.append({
-            "token": token,
-            "node_id": node.id,
-            "reason": reason,
-            "operation": "update",
-            "timestamp": time.time(),
-        })
-        self._gate_token = token
-        try:
-            return self.update(node)
-        finally:
-            self._gate_token = None
-
-    def update(self, node: Node) -> bool:
-        """Update an existing node. Returns True if updated.
-
-        Iron Law 1: update() requires a valid _gate_token.
-        """
-        if self._gate_token is None:
-            raise MinervaStore.IronLawViolation(
-                "Direct store.update() without gate token. "
-                "Use Z._gated_update() or store._system_update(). "
-                "Iron Law 1: All modifications must pass through the gate."
-            )
-        self._gate_token = None  # One-time use
-        node.updated_at = time.time()
-        emb_blob = json.dumps(node.embedding) if node.embedding else None
-
-        # Find the row to update
-        existing = self._conn.execute(
-            "SELECT rowid FROM nodes WHERE id=? AND branch=? AND tx_to=0",
-            (node.id, node.branch),
-        ).fetchone()
-        if existing is None:
-            return False
-
-        rowid = existing["rowid"]
-
-        cursor = self._conn.execute("""
-            UPDATE nodes SET
-                type=?, content=?, embedding=?,
-                valid_from=?, valid_to=?, tx_from=?, tx_to=?,
-                layer=?, trust=?, reinforce_count=?, utility=?, surprise=?,
-                source=?, creator_agent=?, session_id=?, parent_id=?,
-                confidence=?, raw_proof=?, branch=?,
-                updated_at=?, accessed_at=?, access_count=?,
-                is_consolidated=?, custom_type=?
-            WHERE rowid=?
-        """, (
-            node.type, node.content, emb_blob,
-            node.valid_from, node.valid_to, node.tx_from, node.tx_to,
-            node.layer, node.trust, node.reinforce_count, node.utility, node.surprise,
-            node.source, node.creator_agent, node.session_id, node.parent_id,
-            node.confidence, node.raw_proof, node.branch,
-            node.updated_at, node.accessed_at, node.access_count,
-            int(node.is_consolidated), node.custom_type,
-            rowid,
-        ))
-
-        # Sync FTS: delete old, insert new
-        self._conn.execute("DELETE FROM nodes_fts WHERE rowid=?", (rowid,))
-        self._conn.execute("INSERT INTO nodes_fts(rowid, content) VALUES (?, ?)",
-                           (rowid, node.content))
-
-        self._conn.commit()
-        return cursor.rowcount > 0
-
-    def delete(self, node_id: str, branch: str = "main") -> bool:
-        """Soft-delete: set tx_to to now. Returns True if deleted.
-
-        Also removes from FTS5 index.
-        """
-        now = time.time()
-
-        # Find the row
-        existing = self._conn.execute(
-            "SELECT rowid FROM nodes WHERE id=? AND branch=? AND tx_to=0",
-            (node_id, branch),
-        ).fetchone()
-        if existing is None:
-            return False
-
-        rowid = existing["rowid"]
-
-        # Remove from FTS
-        self._conn.execute("DELETE FROM nodes_fts WHERE rowid=?", (rowid,))
-
-        # Remove from fts_map
-        self._conn.execute("DELETE FROM fts_map WHERE fts_rowid=?", (rowid,))
-
-        # Soft-delete the node
-        cursor = self._conn.execute(
-            "UPDATE nodes SET tx_to=? WHERE rowid=?",
-            (now, rowid),
-        )
-        self._conn.commit()
-        return cursor.rowcount > 0
-
-    # ═══════════════════════════════════════════
-    #  Edge operations
-    # ═══════════════════════════════════════════
-
-    def insert_edge(self, edge: Edge) -> str:
-        """Insert an edge. Returns edge.id."""
-        now = time.time()
-        if edge.tx_from == 0:
-            edge.tx_from = now
-        if edge.valid_from == 0:
-            edge.valid_from = now
-
-        self._conn.execute("""
-            INSERT OR REPLACE INTO edges (
-                id, source, target, type, weight, metadata,
-                valid_from, valid_to, tx_from, tx_to, branch
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
-        """, (
-            edge.id, edge.source, edge.target, edge.type, edge.weight,
-            json.dumps(edge.metadata),
-            edge.valid_from, edge.valid_to, edge.tx_from, edge.tx_to, edge.branch,
-        ))
-        self._conn.commit()
-        return edge.id
-
-    def get_neighbors(self, node_id: str, edge_type: EdgeType | None = None,
-                      branch: str = "main") -> list[tuple[Edge, Node]]:
-        """Get neighboring nodes via edges. Returns (edge, neighbor_node) pairs."""
-        if edge_type is not None:
-            edge_rows = self._conn.execute("""
-                SELECT * FROM edges
-                WHERE (source=? OR target=?) AND type=? AND branch=? AND tx_to=0
-            """, (node_id, node_id, edge_type, branch)).fetchall()
-        else:
-            edge_rows = self._conn.execute("""
-                SELECT * FROM edges
-                WHERE (source=? OR target=?) AND branch=? AND tx_to=0
-            """, (node_id, node_id, branch)).fetchall()
-
-        results = []
-        for erow in edge_rows:
-            edge = Edge(
-                id=erow["id"], source=erow["source"], target=erow["target"],
-                type=EdgeType(erow["type"]), weight=erow["weight"],
-                metadata=json.loads(erow["metadata"]),
-                valid_from=erow["valid_from"], valid_to=erow["valid_to"],
-                tx_from=erow["tx_from"], tx_to=erow["tx_to"],
-                branch=erow["branch"],
-            )
-            # Determine neighbor ID
-            neighbor_id = erow["target"] if erow["source"] == node_id else erow["source"]
-            neighbor = self.get(neighbor_id, branch)
-            if neighbor is not None:
-                results.append((edge, neighbor))
-        return results
-
-    def get_all_edges(self, branch: str = "main",
-                      limit: int = 10000) -> list[Edge]:
-        """Get all edges in a branch (for hallway transfer etc)."""
-        rows = self._conn.execute("""
-            SELECT * FROM edges WHERE branch=? AND tx_to=0 LIMIT ?
-        """, (branch, limit)).fetchall()
-
-        edges = []
-        for erow in rows:
-            edges.append(Edge(
-                id=erow["id"], source=erow["source"], target=erow["target"],
-                type=EdgeType(erow["type"]), weight=erow["weight"],
-                metadata=json.loads(erow["metadata"]),
-                valid_from=erow["valid_from"], valid_to=erow["valid_to"],
-                tx_from=erow["tx_from"], tx_to=erow["tx_to"],
-                branch=erow["branch"],
-            ))
-        return edges
-
-    # ═══════════════════════════════════════════
-    #  FTS5 search
-    # ═══════════════════════════════════════════
-
-    def search_fts(self, query: str, limit: int = 20,
-                   branch: str = "main") -> list[tuple[Node, float]]:
-        """Full-text search via FTS5. Returns (node, rank) pairs.
-
-        Search FTS5 → get rowids → look up node IDs via fts_map → get nodes.
-        """
-        # Search FTS5
-        fts_rows = self._conn.execute("""
-            SELECT rowid, rank FROM nodes_fts
-            WHERE nodes_fts MATCH ?
-            ORDER BY rank
-            LIMIT ?
-        """, (query, limit * 3)).fetchall()
-
-        results = []
-        for fts_row in fts_rows:
-            # Look up node_id from fts_map
-            map_row = self._conn.execute(
-                "SELECT node_id, branch FROM fts_map WHERE fts_rowid=?",
-                (fts_row["rowid"],),
-            ).fetchone()
-
-            if map_row is None:
-                continue
-
-            # Filter by branch
-            if map_row["branch"] != branch:
-                continue
-
-            # Get the node
-            node = self.get(map_row["node_id"], branch)
-            if node is not None:
-                # FTS5 rank is negative (lower = better), negate for score
-                results.append((node, -fts_row["rank"]))
-
-            if len(results) >= limit:
-                break
-
-        return results
-
-    # ═══════════════════════════════════════════
-    #  Branch operations (D2: MVCC)
-    # ═══════════════════════════════════════════
-
-    def branch_create(self, name: str, parent: str = "main") -> bool:
-        """Create a memory branch for parallel exploration.
-
-        Uses _system_insert for Iron Law 1 compliance (branch copy is
-        a system operation — nodes are derived from already-verified originals).
-        """
-        now = time.time()
-        # Copy all active nodes from parent to new branch with new IDs
-        parent_nodes = self._conn.execute(
-            "SELECT * FROM nodes WHERE branch=? AND tx_to=0",
-            (parent,),
-        ).fetchall()
-
-        for row in parent_nodes:
-            node = self._row_to_node(row)
-            if node is None:
-                continue
-            # Create a new node for the branch with suffixed ID
-            new_id = f"{node.id}_{name}"
-            node.id = new_id
-            node.branch = name
-            node.tx_from = now
-            node.valid_from = now
-            # Use _system_insert for gate compliance
-            self._system_insert(node, reason=f"branch_create:{name}")
-
-        # Register branch
-        self._conn.execute(
-            "INSERT OR IGNORE INTO branches (name, parent, created_at) VALUES (?,?,?)",
-            (name, parent, now),
-        )
-        self._conn.commit()
-        return True
-
-    def branch_merge(self, source: str, target: str = "main") -> int:
-        """Merge a branch back. Returns count of nodes merged."""
-        # Get all active nodes in source branch
-        rows = self._conn.execute(
-            "SELECT * FROM nodes WHERE branch=? AND tx_to=0",
-            (source,),
-        ).fetchall()
-
-        merged = 0
-        for row in rows:
-            node = self._row_to_node(row)
-            if node is None:
-                continue
-
-            # Remove the branch suffix from the ID to get the original ID
-            original_id = node.id
-            if original_id.endswith(f"_{source}"):
-                original_id = original_id[: -len(f"_{source}")]
-
-            # Check if this node already exists in target
-            existing = self.get(original_id, target)
-            if existing is not None:
-                # Node exists in target — update if source is newer
-                if node.updated_at > existing.updated_at:
-                    existing.content = node.content
-                    existing.utility = node.utility
-                    existing.trust = node.trust
-                    existing.layer = node.layer
-                    existing.reinforce_count = node.reinforce_count
-                    self._system_update(existing, reason="branch_merge")
-                    merged += 1
-            else:
-                # New node — insert into target branch
-                node.id = original_id
-                node.branch = target
-                self._system_insert(node, reason="branch_merge")
-                merged += 1
-
-        self._conn.commit()
-        return merged
-
-    # ═══════════════════════════════════════════
-    #  Time travel (M3: Bi-temporal)
-    # ═══════════════════════════════════════════
-
-    def get_at_time(self, node_id: str, timestamp: float,
-                    branch: str = "main") -> Node | None:
-        """Time-travel query: get node state at a specific point in time."""
-        row = self._conn.execute("""
-            SELECT * FROM nodes
-            WHERE id=? AND branch=?
-            AND tx_from <= ? AND (tx_to = 0 OR tx_to > ?)
-            AND valid_from <= ? AND (valid_to = 0 OR valid_to > ?)
-            ORDER BY tx_from DESC LIMIT 1
-        """, (node_id, branch, timestamp, timestamp, timestamp, timestamp)).fetchone()
-        if row is None:
-            return None
-        return self._row_to_node(row)
-
-    # ═══════════════════════════════════════════
-    #  Bulk operations
-    # ═══════════════════════════════════════════
-
-    def get_all_nodes(self, branch: str = "main", layer: MemoryLayer | None = None,
-                      limit: int = 1000) -> list[Node]:
-        """Get all active nodes, optionally filtered by layer."""
-        if layer is not None:
-            rows = self._conn.execute(
-                "SELECT * FROM nodes WHERE branch=? AND tx_to=0 AND layer=? LIMIT ?",
-                (branch, layer, limit),
-            ).fetchall()
-        else:
-            rows = self._conn.execute(
-                "SELECT * FROM nodes WHERE branch=? AND tx_to=0 LIMIT ?",
-                (branch, limit),
-            ).fetchall()
-        return [self._row_to_node(r) for r in rows if self._row_to_node(r) is not None]
-
-    def count_nodes(self, branch: str = "main") -> int:
-        """Count active nodes."""
-        row = self._conn.execute(
-            "SELECT COUNT(*) as cnt FROM nodes WHERE branch=? AND tx_to=0",
-            (branch,),
-        ).fetchone()
-        return row["cnt"] if row else 0
-
-    def count_edges(self, branch: str = "main") -> int:
-        """Count active edges."""
-        row = self._conn.execute(
-            "SELECT COUNT(*) as cnt FROM edges WHERE branch=? AND tx_to=0",
-            (branch,),
-        ).fetchone()
-        return row["cnt"] if row else 0
-
-    def close(self) -> None:
-        """Close the database connection."""
-        self._conn.close()
-
-    # ═══════════════════════════════════════════
-    #  Internal helpers
-    # ═══════════════════════════════════════════
-
-    def _row_to_node(self, row: sqlite3.Row) -> Node | None:
-        """Convert a database row to a Node. P-26: reads ALL columns."""
-        try:
-            embedding = []
-            if row["embedding"] is not None:
-                embedding = json.loads(row["embedding"])
-
-            return Node(
-                id=row["id"],
-                type=NodeType(row["type"]),
-                content=row["content"],
-                embedding=embedding,
-                valid_from=row["valid_from"],
-                valid_to=row["valid_to"],
-                tx_from=row["tx_from"],
-                tx_to=row["tx_to"],
-                layer=MemoryLayer(row["layer"]),
-                trust=TrustLevel(row["trust"]),
-                reinforce_count=row["reinforce_count"],
-                utility=row["utility"],
-                surprise=row["surprise"],
-                source=ProvenanceType(row["source"]),
-                creator_agent=row["creator_agent"],
-                session_id=row["session_id"],
-                parent_id=row["parent_id"],
-                confidence=row["confidence"],
-                raw_proof=row["raw_proof"],
-                branch=row["branch"],
-                created_at=row["created_at"],
-                updated_at=row["updated_at"],
-                accessed_at=row["accessed_at"],
-                access_count=row["access_count"],
-                is_consolidated=bool(row["is_consolidated"]),
-                custom_type=row["custom_type"],
-            )
-        except (KeyError, ValueError) as e:
-            # P-26 guard: if column missing, log and return None
-            return None
-
-# ===== 来自XYZ系统 =====
-    """关键词节点 - 连接事件"""
-    key_id: str
-    text: str = ""
-    tag_list: List[str] = field(default_factory=list)
-    tag_dict: Dict[str, List[str]] = field(default_factory=dict)
-    
-    def add_tag(self, tag: str, event_id: str) -> None:
-        """添加tag连接"""
-        if tag not in self.tag_list:
-            self.tag_list.append(tag)
-        if tag not in self.tag_dict:
-            self.tag_dict[tag] = []
-        if event_id not in self.tag_dict[tag]:
-            self.tag_dict[tag].append(event_id)
-    
-    def get_events_by_tag(self, tag: str) -> List[str]:
-        """按tag获取事件ID列表"""
-        return self.tag_dict.get(tag, [])
-
-# ===== 来自XYZ系统 =====
-class KeyNode:
-    """关键词节点 - 连接事件"""
-    key_id: str
-    text: str = ""
-    tag_list: List[str] = field(default_factory=list)
-    tag_dict: Dict[str, List[str]] = field(default_factory=dict)
-    
-    def add_tag(self, tag: str, event_id: str) -> None:
-        """添加tag连接"""
-        if tag not in self.tag_list:
-            self.tag_list.append(tag)
-        if tag not in self.tag_dict:
-            self.tag_dict[tag] = []
-        if event_id not in self.tag_dict[tag]:
-            self.tag_dict[tag].append(event_id)
-    
-    def get_events_by_tag(self, tag: str) -> List[str]:
-        """按tag获取事件ID列表"""
-        return self.tag_dict.get(tag, [])
-
-# 异步工具
-async def async_retry(func, max_attempts=3, delay=1.0):
-    """异步重试装饰器"""
-    import asyncio
-    for i in range(max_attempts):
-        try:
-            return await func()
-        except Exception as e:
-            if i == max_attempts - 1:
-                raise
-            await asyncio.sleep(delay)

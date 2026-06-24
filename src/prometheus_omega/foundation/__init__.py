@@ -1,269 +1,54 @@
-# 基础导入
-from __future__ import annotations
-import logging
-
-import sys, os, re, json, time, datetime
-import logging
-
-from typing import Dict, List, Any, Optional, Callable, Tuple, Set
-import logging
-
-from dataclasses import dataclass, field
-from enum import Enum, IntEnum, auto
-
-
-import logging
-
-import time
-from enum import IntEnum, Enum
-
 """L0 Foundation - 基础层
 
 整合XYZ机制:
 - X: UUIDv7, 42 NodeType, 40 EdgeType, DeterministicRuleEngine(44+规则)
 - Z: Config, EventBus基础
 """
-import logging
-
 from dataclasses import dataclass, field
-import logging
-
 from typing import Dict, List, Optional, Any, Set
 from datetime import datetime, timezone
 from enum import Enum
-import logging
-
 import uuid
-import logging
-
 import hashlib
-import logging
-
 import json
 
 
 # ===== UUIDv7时序ID生成 =====
 
-# 缓存工具
-
-logger = logging.getLogger(__name__)
-
-
-# 配置管理
-
-# 单例模式
-
-import hashlib
-import hmac
-
-
-    @staticmethod
-    def handle_error(error: Exception, context: str = "") -> dict:
-        """统一错误处理"""
-        import traceback
-        return {
-            "error_type": type(error).__name__,
-            "message": str(error),
-            "context": context,
-            "traceback": traceback.format_exc()
-        }
-
 # ═══════════════════════════════════════════════════════════════
-# 企业级工程化特性
+# 工程化工具类
 # ═══════════════════════════════════════════════════════════════
 
-from typing import TypeVar, Generic, Iterator, AsyncIterator
-from contextlib import contextmanager, asynccontextmanager
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-
-T = TypeVar('T')
-
-class RetryPolicy:
-    """重试策略"""
-    def __init__(self, max_attempts: int = 3, backoff_factor: float = 2.0):
-        self.max_attempts = max_attempts
-        self.backoff_factor = backoff_factor
+class SimpleCache:
+    """简单内存缓存"""
+    def __init__(self, max_size: int = 1000, ttl: float = 300.0):
+        self.max_size = max_size
+        self.ttl = ttl
+        self._cache: Dict[str, tuple] = {}
     
-    def execute(self, func: Callable[..., T], *args, **kwargs) -> T:
+    def get(self, key: str) -> Optional[Any]:
         import time
-        last_exception = None
-        for attempt in range(self.max_attempts):
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                last_exception = e
-                if attempt < self.max_attempts - 1:
-                    time.sleep(self.backoff_factor ** attempt)
-        raise last_exception
-
-
-class BulkheadPattern:
-    """隔板模式 - 资源隔离"""
-    def __init__(self, max_concurrent: int = 10):
-        self.max_concurrent = max_concurrent
-        self._semaphore = asyncio.Semaphore(max_concurrent)
+        if key in self._cache:
+            value, timestamp = self._cache[key]
+            if time.time() - timestamp < self.ttl:
+                return value
+            del self._cache[key]
+        return None
     
-    async def execute(self, func: Callable, *args, **kwargs):
-        async with self._semaphore:
-            return await func(*args, **kwargs)
-
-
-class Observer(Generic[T]):
-    """观察者模式"""
-    def __init__(self):
-        self._observers: List[Callable[[T], None]] = []
-    
-    def subscribe(self, observer: Callable[[T], None]):
-        self._observers.append(observer)
-    
-    def notify(self, event: T):
-        for observer in self._observers:
-            observer(event)
-
-
-class EventBus:
-    """事件总线"""
-    def __init__(self):
-        self._handlers: Dict[str, List[Callable]] = defaultdict(list)
-    
-    def subscribe(self, event_type: str, handler: Callable):
-        self._handlers[event_type].append(handler)
-    
-    def publish(self, event_type: str, data: Any):
-        for handler in self._handlers.get(event_type, []):
-            handler(data)
-
-
-class ServiceRegistry:
-    """服务注册表"""
-    def __init__(self):
-        self._services: Dict[str, Any] = {}
-        self._lock = threading.RLock()
-    
-    def register(self, name: str, service: Any):
-        with self._lock:
-            self._services[name] = service
-    
-    def get(self, name: str) -> Optional[Any]:
-        with self._lock:
-            return self._services.get(name)
-    
-    def unregister(self, name: str):
-        with self._lock:
-            self._services.pop(name, None)
-
-
-class HealthCheck:
-    """健康检查"""
-    def __init__(self):
-        self._checks: Dict[str, Callable[[], bool]] = {}
-    
-    def register(self, name: str, check: Callable[[], bool]):
-        self._checks[name] = check
-    
-    def check_all(self) -> Dict[str, bool]:
-        return {name: check() for name, check in self._checks.items()}
-    
-    def is_healthy(self) -> bool:
-        return all(self.check_all().values())
-
-
-class RateLimiterTokenBucket:
-    """令牌桶限流"""
-    def __init__(self, rate: float, capacity: int):
-        self.rate = rate
-        self.capacity = capacity
-        self.tokens = capacity
-        self.last_update = time.time()
-        self._lock = threading.Lock()
-    
-    def acquire(self, tokens: int = 1) -> bool:
-        with self._lock:
-            now = time.time()
-            self.tokens = min(self.capacity, self.tokens + (now - self.last_update) * self.rate)
-            self.last_update = now
-            if self.tokens >= tokens:
-                self.tokens -= tokens
-                return True
-            return False
-
-
-@contextmanager
-def transaction(session):
-    """事务上下文管理器"""
-    try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
-
-
-@asynccontextmanager
-async def async_transaction(session):
-    """异步事务上下文管理器"""
-    try:
-        yield session
-        await session.commit()
-    except Exception:
-        await session.rollback()
-        raise
-    finally:
-        await session.close()
-
-class SecurityContext:
-    """安全上下文"""
-    def __init__(self):
-        self.user_id = None
-        self.permissions = []
-    
-    def check_permission(self, perm: str) -> bool:
-        return perm in self.permissions or 'admin' in self.permissions
-
-
-    def _validate_state(self) -> bool:
-        """验证状态"""
-        return True
-    
-    def _update_metrics(self, key: str, value: float):
-        """更新指标"""
-        pass
-    
-    def process_batch(self, items: List[Any]) -> List[Any]:
-        """批量处理"""
-        return items
-    
-    def get_diagnostics(self) -> dict:
-        """获取诊断信息"""
-        return {"status": "ok"}
-
-class AuditLogger:
-    """审计日志"""
-    def __init__(self):
-        self.logs = []
-    
-    def log(self, action: str, user: str, result: bool):
+    def set(self, key: str, value: Any) -> None:
         import time
-        self.logs.append({
-            "timestamp": time.time(),
-            "action": action,
-            "user": user,
-            "result": result
-        })
-class SingletonMeta(type):
-    """单例元类"""
-    _instances = {}
+        if len(self._cache) >= self.max_size:
+            # 删除最老的
+            oldest = min(self._cache.items(), key=lambda x: x[1][1])
+            del self._cache[oldest[0]]
+        self._cache[key] = (value, time.time())
     
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super().__call__(*args, **kwargs)
-        return cls._instances[cls]
+    def clear(self) -> None:
+        self._cache.clear()
 
-class Config:
-    """全局配置"""
+
+class ConfigManager:
+    """配置管理器 - 单例模式"""
     _instance = None
     
     def __new__(cls):
@@ -272,84 +57,45 @@ class Config:
             cls._instance._config = {}
         return cls._instance
     
-    def get(self, key, default=None):
-        return self._config.get(key, default)
-    
-    def set(self, key, value):
+    def set(self, key: str, value: Any) -> None:
         self._config[key] = value
+    
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._config.get(key, default)
 
-    # 扩展工具方法
-    def _get_state(self) -> dict:
-        """获取当前状态"""
-        return {"status": "active"}
-    
-    def _set_state(self, state: dict):
-        """设置状态"""
-        pass
-    
-    def reset(self):
-        """重置"""
-        pass
-    
-    def health_check(self) -> bool:
-        """健康检查"""
-        return True
-    
 
-class SimpleCache:
-    """简单内存缓存"""
-    def __init__(self, max_size: int = 1000, ttl: float = 300.0):
-    try:
-        pass
-    except Exception as e:
-        logger.error(f"Error in {__name__}: {{e}}")
-        raise
-        self.max_size = max_size
-        self.ttl = ttl
-        self._cache = {}
-        self._times = {}
+class AsyncHelper:
+    """异步工具类"""
+    @staticmethod
+    async def run_in_executor(func: Callable, *args) -> Any:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, func, *args)
     
-    def get(self, key):
-    try:
-        pass
-    except Exception as e:
-        logger.error(f"Error in {__name__}: {{e}}")
-        raise
-        import time
-        if key in self._cache:
-            if time.time() - self._times[key] < self.ttl:
-                return self._cache[key]
-            del self._cache[key]
-        return None
-    
-    def set(self, key, value):
-    try:
-        pass
-    except Exception as e:
-        logger.error(f"Error in {__name__}: {{e}}")
-        raise
-        import time
-        if len(self._cache) >= self.max_size:
-            # 删除最老的
-            oldest = min(self._times, key=self._times.get)
-            del self._cache[oldest]
-            del self._times[oldest]
-        self._cache[key] = value
-        self._times[key] = time.time()
+    @staticmethod
+    async def retry_async(func: Callable, max_attempts: int = 3, delay: float = 1.0) -> Any:
+        import asyncio
+        for attempt in range(max_attempts):
+            try:
+                return await func()
+            except Exception as e:
+                if attempt == max_attempts - 1:
+                    raise
+                await asyncio.sleep(delay * (2 ** attempt))
 
-def cached(cache: SimpleCache):
-    """缓存装饰器"""
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            key = str(args) + str(kwargs)
-            result = cache.get(key)
-            if result is not None:
-                return result
-            result = func(*args, **kwargs)
-            cache.set(key, result)
-            return result
-        return wrapper
-    return decorator
+
+class ThreadPool:
+    """线程池管理"""
+    def __init__(self, max_workers: int = 4):
+        from concurrent.futures import ThreadPoolExecutor
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+    
+    def submit(self, func: Callable, *args):
+        return self.executor.submit(func, *args)
+    
+    def shutdown(self, wait: bool = True):
+        self.executor.shutdown(wait=wait)
+
 
 class UUIDv7Generator:
     """UUIDv7 时间有序唯一ID生成器
@@ -860,19 +606,6 @@ class Schema:
 # 导入统一数据结构
 from .schema import OmegaNode, OmegaConfig, NodeType, TrustLevel, MemoryLayer
 
-
-# ===== 来自XYZ系统 =====
-class AutonomyLevel(IntEnum):
-    """S1: 5-level autonomy. L0=full-auto, L4=forbidden."""
-    L0_FULL_AUTO = 0
-    L1_REPORT_AFTER = 1
-    L2_CONFIRM_FIRST = 2
-    L3_EXPLICIT_APPROVAL = 3
-    L4_FORBIDDEN = 4
-
-
-
-
 # ===== 兼容性别名 (使用统一schema) =====
 Node = OmegaNode
 Config = OmegaConfig
@@ -901,361 +634,3 @@ def create_rule_engine() -> DeterministicRuleEngine:
 def create_event_bus() -> EventBus:
     """创建事件总线"""
     return EventBus()
-
-
-# ===== 来自XYZ系统(依赖) =====
-
-# ===== XYZ系统依赖类 =====
-
-class Strictness(IntEnum):
-    """P4: Buffering strictness levels."""
-    NORMAL = 0
-    CRITICAL = 1
-    DREAM = 2
-
-
-
-class SecurityPosture(IntEnum):
-    """S13: 4-level dynamic security. LOW→CRITICAL."""
-    LOW = 0
-    MEDIUM = 1
-    HIGH = 2
-    CRITICAL = 3
-
-
-
-class AutonomyLevel(IntEnum):
-    """S1: 5-level autonomy. L0=full-auto, L4=forbidden."""
-    L0_FULL_AUTO = 0
-    L1_REPORT_AFTER = 1
-    L2_CONFIRM_FIRST = 2
-    L3_EXPLICIT_APPROVAL = 3
-    L4_FORBIDDEN = 4
-
-
-
-class MemoryLayer(IntEnum):
-    """BEAM three-layer memory. Each layer has distinct Weibull parameters."""
-    WORKING = 0
-    EPISODIC = 1
-    SEMANTIC = 2
-
-
-
-class LifecycleAction(IntEnum):
-    """Zero-LLM lifecycle decisions."""
-    KEEP = 0
-    PROMOTE = 1
-    DECAY = 2
-    ARCHIVE = 3
-    DELETE = 4
-
-
-
-class GateResult(IntEnum):
-    """Result from any gate check."""
-    PASS = 1
-    FAIL = 0
-
-
-
-class WriteOperator(IntEnum):
-    """M14: Semantic write operators for isolation levels."""
-    PLUS_T = 0   # ⊕t temporal: valid_at update only
-    PLUS_P = 1   # ⊕p provenance: new source attribution
-    PLUS_Q = 2   # ⊕? question: flag for verification
-    PLUS_C = 3   # ⊕c correction: amend with evidence
-
-
-
-class CommitState(IntEnum):
-    """MVCC transaction states."""
-    ACTIVE = 0
-    COMMITTED = 1
-    ROLLED_BACK = 2
-
-
-
-class ProvenanceType(IntEnum):
-    """Source of a node's knowledge."""
-    UNKNOWN = 0
-    OBSERVED = 1
-    INFERRED = 2
-    IMPORTED = 3
-    GENERATED = 4
-
-
-
-class NodeType(IntEnum):
-    """Core node types. Extensible at runtime (D28 Dynamic Ontology)."""
-    CONCEPT = 0
-    FACT = 1
-    EPISODE = 2
-    SKILL = 3
-    AVOID_RULE = 4
-    QUESTION = 5
-    HYPOTHESIS = 6
-    CODE = 7
-    PATTERN = 8
-    GOAL = 9
-    ANTI_PATTERN = 10
-    BELIEF = 11
-    CODE_UNIT = 12
-    PROCEDURE = 13
-
-
-
-class EdgeType(IntEnum):
-    """Core edge types for knowledge graph connectivity."""
-    RELATES_TO = 0
-    DEPENDS_ON = 1
-    CONSOLIDATES_TO = 2
-    CONTRADICTS = 3
-    SUPPORTS = 4
-    DERIVED_FROM = 5
-    IMPLEMENTS = 6
-    SUBSUMES = 7
-    MENTIONS = 8
-    CONTAINS = 9
-    PRECEDES = 10
-    PREDICTS = 11
-
-
-
-class ConstraintKind(IntEnum):
-    """P14: Constraint types for ≤7 limit."""
-    SAFETY = 0
-    QUALITY = 1
-    PERFORMANCE = 2
-    BEHAVIOR = 3
-    RESOURCE = 4
-    SCOPE = 5
-    COMPATIBILITY = 6
-
-
-# ═══════════════════════════════════════════
-#  Dataclasses
-# ═══════════════════════════════════════════
-
-@dataclass
-
-class ZConfig:
-    """System-wide configuration. All defaults are safe."""
-    # Write gate
-    write_gate_tau: float = 1.0         # DopamineWriteGate threshold
-    surprise_beta: float = 0.3          # Surprise bonus (prevents gate collapse)
-    max_utility: float = 5.0           # Utility cap
-
-    # Weibull forgetting per layer (M7)
-    weibull_lambda: dict[int, float] = field(default_factory=lambda: {
-        MemoryLayer.WORKING: 30.0,     # days
-        MemoryLayer.EPISODIC: 90.0,
-        MemoryLayer.SEMANTIC: 365.0,
-    })
-    weibull_k: dict[int, float] = field(default_factory=lambda: {
-        MemoryLayer.WORKING: 0.7,      # <1 = decelerating
-        MemoryLayer.EPISODIC: 0.8,
-        MemoryLayer.SEMANTIC: 1.5,     # >1 = accelerating (rarely forget)
-    })
-
-    # Trust promotion thresholds (K1)
-    promote_after: int = 3             # reinforce_count for PENDING→HIGH_SIGNAL
-    verify_after: int = 6              # reinforce_count for HIGH_SIGNAL→VERIFIED
-
-    # AntiEvolutionGate (E10)
-    consecutive_zero_gain_limit: int = 3  # reset after this many zero-gain rounds
-    novelty_hunger_threshold: float = 0.7
-
-    # Pass@k
-    pass_k_k: int = 3
-    pass_k_threshold: float = 0.9      # 90% for application
-
-    # Compile-to-rule
-    compile_fitness_threshold: float = 0.95
-
-    # Constraints (P14)
-    max_constraints: int = 7
-
-    # Autonomy defaults
-    default_autonomy: AutonomyLevel = AutonomyLevel.L1_REPORT_AFTER
-    default_strictness: Strictness = Strictness.NORMAL
-    default_security: SecurityPosture = SecurityPosture.LOW
-
-    # LLM
-    llm_base_url: str = ""
-    llm_model: str = ""
-    llm_max_retries: int = 3
-    llm_timeout: float = 30.0
-    llm_fallbacks: list[str] = field(default_factory=list)
-
-    # Storage
-    db_path: str = "prometheus_z.db"
-    embedding_dim: int = 0  # 0 = auto-detect from first embedding
-
-    # Safety
-    max_error_rate: float = 0.3
-    circuit_breaker_threshold: int = 5
-    circuit_breaker_cooldown: float = 30.0  # seconds
-    buffer_release_threshold: float = 0.7
-
-
-
-class ZConfig:
-    """System-wide configuration. All defaults are safe."""
-    # Write gate
-    write_gate_tau: float = 1.0         # DopamineWriteGate threshold
-    surprise_beta: float = 0.3          # Surprise bonus (prevents gate collapse)
-    max_utility: float = 5.0           # Utility cap
-
-    # Weibull forgetting per layer (M7)
-    weibull_lambda: dict[int, float] = field(default_factory=lambda: {
-        MemoryLayer.WORKING: 30.0,     # days
-        MemoryLayer.EPISODIC: 90.0,
-        MemoryLayer.SEMANTIC: 365.0,
-    })
-    weibull_k: dict[int, float] = field(default_factory=lambda: {
-        MemoryLayer.WORKING: 0.7,      # <1 = decelerating
-        MemoryLayer.EPISODIC: 0.8,
-        MemoryLayer.SEMANTIC: 1.5,     # >1 = accelerating (rarely forget)
-    })
-
-    # Trust promotion thresholds (K1)
-    promote_after: int = 3             # reinforce_count for PENDING→HIGH_SIGNAL
-    verify_after: int = 6              # reinforce_count for HIGH_SIGNAL→VERIFIED
-
-    # AntiEvolutionGate (E10)
-    consecutive_zero_gain_limit: int = 3  # reset after this many zero-gain rounds
-    novelty_hunger_threshold: float = 0.7
-
-    # Pass@k
-    pass_k_k: int = 3
-    pass_k_threshold: float = 0.9      # 90% for application
-
-    # Compile-to-rule
-    compile_fitness_threshold: float = 0.95
-
-    # Constraints (P14)
-    max_constraints: int = 7
-
-    # Autonomy defaults
-    default_autonomy: AutonomyLevel = AutonomyLevel.L1_REPORT_AFTER
-    default_strictness: Strictness = Strictness.NORMAL
-    default_security: SecurityPosture = SecurityPosture.LOW
-
-    # LLM
-    llm_base_url: str = ""
-    llm_model: str = ""
-    llm_max_retries: int = 3
-    llm_timeout: float = 30.0
-    llm_fallbacks: list[str] = field(default_factory=list)
-
-    # Storage
-    db_path: str = "prometheus_z.db"
-    embedding_dim: int = 0  # 0 = auto-detect from first embedding
-
-    # Safety
-    max_error_rate: float = 0.3
-    circuit_breaker_threshold: int = 5
-    circuit_breaker_cooldown: float = 30.0  # seconds
-    buffer_release_threshold: float = 0.7
-
-
-class GateCheckResult:
-    """Result from any gate check. Check .passed, NOT truthiness."""
-    passed: bool = False
-    reason: str = ""
-    gate_name: str = ""
-    details: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-
-class WriteGateResult:
-    """DopamineWriteGate output. Check .allowed, NOT truthiness."""
-    allowed: bool = False
-    gate_value: float = 0.0
-    reason: str = ""
-
-
-@dataclass
-
-class EvolutionCheckResult:
-    """AntiEvolutionGate output. Check .passed, NOT truthiness."""
-    passed: bool = False
-    reason: str = ""
-    prerequisites_met: list[str] = field(default_factory=list)
-    prerequisites_failed: list[str] = field(default_factory=list)
-
-
-# 别名
-OmegaConfig = ZConfig
-
-class EvolutionOutcome:
-    """Result from evolve() pipeline."""
-    def __init__(
-        self,
-        applied: bool = False,
-        fitness_before: float = 0.0,
-        fitness_after: float = 0.0,
-        compilation: bool = False,
-        reason: str = ""
-    ):
-        self.applied = applied
-        self.fitness_before = fitness_before
-        self.fitness_after = fitness_after
-        self.compilation = compilation
-        self.reason = reason
-
-@dataclass
-class Edge:
-    """Connection between nodes. Value is in connections, not nodes (P9)."""
-    id: str = field(default_factory=lambda: uuid.uuid4().hex[:16])
-    source: str = ""   # node.id
-    target: str = ""   # node.id
-    type: EdgeType = EdgeType.RELATES_TO
-    weight: float = 1.0
-    metadata: dict[str, Any] = field(default_factory=dict)
-    valid_from: float = field(default_factory=time.time)
-    valid_to: float = 0.0
-    tx_from: float = field(default_factory=time.time)
-    tx_to: float = 0.0
-    branch: str = "main"
-
-@dataclass
-class Constraint:
-    """P14: Constraint with P16 metadata. Max 7 active."""
-    kind: ConstraintKind = ConstraintKind.SAFETY
-    description: str = ""
-    why: str = ""         # P16: why this constraint exists
-    trigger: str = ""     # P16: when it fires
-    verify: str = ""      # P16: how to verify compliance
-    severity: float = 1.0
-
-@dataclass
-class FetchResult:
-    """Retrieved memory entries with relevance scores."""
-    nodes: List[Node]
-    scores: List[float]
-    query: str
-    layer: MemoryLayer = MemoryLayer.EPISODIC
-    branch: str = "main"
-
-class TrustLevel(IntEnum):
-    """Trust level for memory nodes."""
-    PENDING = 0
-    LOW = 1
-    MEDIUM = 2
-    HIGH = 3
-    VERIFIED = 4
-
-# 异步工具
-async def async_retry(func, max_attempts=3, delay=1.0):
-    """异步重试装饰器"""
-    import asyncio
-    for i in range(max_attempts):
-        try:
-            return await func()
-        except Exception as e:
-            if i == max_attempts - 1:
-                raise
-            await asyncio.sleep(delay)

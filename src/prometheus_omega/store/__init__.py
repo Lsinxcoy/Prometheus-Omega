@@ -26,6 +26,9 @@ import hashlib
 import hmac
 
 
+class ErrorHandler:
+    """统一错误处理工具类"""
+    
     @staticmethod
     def handle_error(error: Exception, context: str = "") -> dict:
         """统一错误处理"""
