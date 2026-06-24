@@ -61,6 +61,33 @@ class FourLayerDefense:
         # 审计日志
         self._audit_log: List[Dict] = []
     
+    def check(self, layer: str, data: Dict = None) -> bool:
+        """检查指定层是否安全
+        
+        Args:
+            layer: 层名称 (layer1/layer2/layer3/layer4 或 perimeter/application/data/runtime)
+            data: 可选的检查数据
+            
+        Returns:
+            bool: 该层是否安全
+        """
+        layer_map = {
+            "layer1": "layer1_perimeter",
+            "layer2": "layer2_application",
+            "layer3": "layer3_data",
+            "layer4": "layer4_runtime",
+            "perimeter": "layer1_perimeter",
+            "application": "layer2_application",
+            "data": "layer3_data",
+            "runtime": "layer4_runtime",
+        }
+        
+        attr = layer_map.get(layer.lower())
+        if not attr:
+            return False
+        
+        return getattr(self, attr, False)
+    
     def audit(self, context: Dict) -> SecurityAudit:
         """4层纵深审计
         
@@ -570,6 +597,32 @@ class FiveGates:
         Returns:
             状态字典
         """
+        return {
+            "gates": self.gates.copy(),
+            "strict_mode": self.strict_mode,
+            "trip_counts": self._trip_count.copy(),
+            "log_size": len(self._log),
+        }
+    
+    def check(self, gate: str, node=None) -> bool:
+        """通用门检查 - 简化接口
+        
+        Args:
+            gate: 门名称 (read/write/consolidate/execute/exit)
+            node: 可选的节点对象
+            
+        Returns:
+            bool: 是否允许
+        """
+        if gate not in self.gates:
+            return False
+        
+        if gate == "read":
+            return self.read_gate_check(node) if node else self.gates["read"]
+        elif gate == "write":
+            return self.write_gate_check(node) if node else self.gates["write"]
+        else:
+            return self.gates.get(gate, True)
         return {
             "gates": self.gates.copy(),
             "trip_count": self._trip_count.copy(),

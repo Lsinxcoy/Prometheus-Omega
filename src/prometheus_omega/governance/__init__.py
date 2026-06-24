@@ -1,6 +1,7 @@
-"""L8 Governance - 治理层 (22宪法+5级自治+3级信任)"""
+"""L8 Governance - 治理层 (22宪法+5级自治+3级信任)
+"""
 from dataclasses import dataclass, field
-from typing import List, Dict
+from typing import List, Dict, Any, Optional, Callable
 from enum import Enum
 
 

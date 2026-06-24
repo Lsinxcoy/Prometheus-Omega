@@ -182,6 +182,45 @@ class FourNetworkMemory:
         self._content_index: Dict[str, Set[str]] = {}  # word -> fact_ids
         self._tag_index: Dict[str, Set[str]] = {}       # tag -> fact_ids
     
+    def store(self, entry) -> bool:
+        """存储条目 (统一接口)
+        
+        Args:
+            entry: UnifiedEntry 或 FourNetworkFact
+            
+        Returns:
+            bool: 是否成功
+        """
+        from datetime import datetime, timezone
+        
+        # 如果是 UnifiedEntry，转换为 FourNetworkFact
+        if hasattr(entry, 'id') and hasattr(entry, 'content'):
+            fact = FourNetworkFact(
+                fact_id=entry.id,
+                content=entry.content,
+                network_type=MemoryNetwork.WORLD,
+                confidence=entry.confidence if hasattr(entry, 'confidence') else 0.5,
+                tags=entry.tags if hasattr(entry, 'tags') else [],
+            )
+            self.world_facts[fact.fact_id] = fact
+            self._index_fact(fact)
+            return True
+        
+        # 如果是 FourNetworkFact
+        if hasattr(entry, 'fact_id'):
+            if entry.network_type == MemoryNetwork.WORLD:
+                self.world_facts[entry.fact_id] = entry
+            elif entry.network_type == MemoryNetwork.EXPERIENCES:
+                self.experiences[entry.fact_id] = entry
+            elif entry.network_type == MemoryNetwork.SUMMARIES:
+                self.summaries[entry.fact_id] = entry
+            elif entry.network_type == MemoryNetwork.BELIEFS:
+                self.beliefs[entry.fact_id] = entry
+            self._index_fact(entry)
+            return True
+        
+        return False
+    
     def _index_fact(self, fact: FourNetworkFact):
         """索引事实用于快速检索"""
         # 内容分词索引
@@ -595,6 +634,18 @@ class Bank:
             self.semantic[entry.id] = entry
         elif layer == BankLayer.ARCHIVE:
             self.archive[entry.id] = entry
+    
+    def store(self, entry: UnifiedEntry) -> bool:
+        """存储条目到工作层 (store是add的别名)
+        
+        Args:
+            entry: 统一条目
+            
+        Returns:
+            bool: 是否成功
+        """
+        self.add(entry, BankLayer.WORKING)
+        return True
     
     def migrate(self) -> int:
         """执行自动迁移, 返回迁移数量"""
