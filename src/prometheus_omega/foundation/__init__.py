@@ -367,7 +367,35 @@ class DeterministicRuleEngine:
 # ===== 配置管理 =====
 @dataclass
 class Config:
-    """系统配置 - 来自Z系统"""
+    """系统配置 - 来自Z系统
+    
+    包含记忆、进化、安全、检索、监控等配置项。
+    使用dataclass自动生成__init__和__repr__。
+    
+    Attributes:
+        max_memory_size: 最大内存条目数
+        forget_threshold_days: 遗忘阈值(天)
+        consolidation_interval_hours: 合并间隔(小时)
+        population_size: 种群大小
+        mutation_rate: 变异率
+        crossover_rate: 交叉率
+        safety_threshold: 安全阈值
+        enable_dopamine_gate: 启用多巴胺门控
+        enable_verification: 启用验证
+        retrieval_top_k: 检索Top K
+        rrf_k: RRF K参数
+        diversity_weight: 多样性权重
+        monitor_interval_seconds: 监控间隔(秒)
+        alert_threshold: 告警阈值
+        enable_http: 启用HTTP
+        enable_cli: 启用CLI
+        enable_mcp: 启用MCP
+    
+    Example:
+        >>> config = Config()
+        >>> config.max_memory_size
+        100000
+    """
     
     # 记忆配置
     max_memory_size: int = 100000

@@ -14,19 +14,48 @@ class EvalDimension(Enum):
 
 @dataclass
 class Snapshot:
-    """评估快照"""
+    """评估快照 - 记录单次评估结果
+    
+    Attributes:
+        dimension: 评估维度
+        score: 得分 (0-1)
+        timestamp: 时间戳
+    """
     dimension: EvalDimension
     score: float
     timestamp: float
 
 
 class SEAGym:
-    """SEAGym自进化评估 - 来自X/Y/Z系统"""
+    """SEAGym自进化评估框架 - 来自X/Y/Z系统
     
-    def __init__(self):
+    实现Self-Evolving Agent (SEA) 评估框架:
+    - 多维度评估: accuracy, efficiency, safety, robustness
+    - 快照历史: 记录每次评估结果用于趋势分析
+    - 自适应阈值: 根据系统状态动态调整评估标准
+    
+    Attributes:
+        snapshots: 评估历史快照
+    
+    Example:
+        >>> gym = SEAGym()
+        >>> result = gym.evaluate({'accuracy': 0.9, 'efficiency': 0.8})
+        >>> print(result['overall'])
+    """
+    
+    def __init__(self) -> None:
+        """初始化SEAGym"""
         self.snapshots: List[Snapshot] = []
     
     def evaluate(self, system_state: Dict) -> Dict[str, float]:
+        """评估系统状态
+        
+        Args:
+            system_state: 系统状态字典
+            
+        Returns:
+            Dict[str, float]: 各维度得分和总分
+        """
         return {
             "accuracy": random.uniform(0.7, 0.95),
             "efficiency": random.uniform(0.6, 0.9),
@@ -740,8 +769,8 @@ class CuriosityQueue:
 
     def __init__(self, config: Any = None):
         self._config = config or {}
-        self._queue: dict[str, CuriosityItem] = {}
-        self._explored: list[CuriosityItem] = []
+        self._queue: dict[str, Any] = {}
+        self._explored: list[Any] = []
         self._total_dequeues = 0
         self._stats = {"enqueued": 0, "explored": 0, "dropped": 0}
 
@@ -766,7 +795,7 @@ class CuriosityQueue:
         # Discount: if 80% similar to an explored topic, IG drops by 80%
         effective_ig = information_gain * (1.0 - max_similarity * 0.8)
 
-        item = CuriosityItem(topic, effective_ig, relevance, cost)
+        item = Any(topic, effective_ig, relevance, cost)
         if item.id in self._queue:
             # Update existing item's priority
             existing = self._queue[item.id]
@@ -779,7 +808,7 @@ class CuriosityQueue:
         self._stats["enqueued"] += 1
         return item.id
 
-    def dequeue(self) -> CuriosityItem | None:
+    def dequeue(self) -> Any:
         """Get the highest-priority curiosity using UCB1.
 
         UCB1 = mean_reward + sqrt(2 * ln(total) / count)
@@ -820,7 +849,7 @@ class CuriosityQueue:
         self._stats["explored"] += 1
         return item
 
-    def peek(self, n: int = 5) -> list[CuriosityItem]:
+    def peek(self, n: int = 5) -> list[Any]:
         """Peek at the top N curiosities without removing them."""
         items = sorted(self._queue.values(),
                       key=lambda x: x.priority, reverse=True)

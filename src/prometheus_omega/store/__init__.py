@@ -57,17 +57,33 @@ class RetryPolicy:
         self.max_attempts = max_attempts
         self.backoff_factor = backoff_factor
     
-    def execute(self, func: Callable[..., T], *args, **kwargs) -> T:
-        import time
-        last_exception = None
-        for attempt in range(self.max_attempts):
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                last_exception = e
-                if attempt < self.max_attempts - 1:
-                    time.sleep(self.backoff_factor ** attempt)
-        raise last_exception
+    def execute(self, func: Callable[..., T], *args, fallback: Optional[Callable[[], T]] = None, **kwargs) -> T:
+            """执行带重试的函数
+        
+            Args:
+                func: 要执行的函数
+                *args: 位置参数
+                fallback: 可选的降级函数
+                **kwargs: 关键字参数
+            
+            Returns:
+                T: 函数结果
+            """
+            import time
+            last_exception = None
+            for attempt in range(self.max_attempts):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    if attempt < self.max_attempts - 1:
+                        time.sleep(self.backoff_factor ** attempt)
+        
+            # 如果有fallback则调用
+            if fallback is not None:
+                return fallback()
+        
+            raise last_exception
 
 
 class BulkheadPattern:
@@ -422,25 +438,73 @@ class StorageBackend(ABC):
 
 
 class InMemoryStorage(StorageBackend):
-    """内存存储后端"""
-    def __init__(self):
+    """内存存储后端 - 线程安全的键值存储
+    
+    使用RLock保证线程安全，支持基本的CRUD操作。
+    
+    Attributes:
+        _data: 存储数据的字典
+        _lock: 线程锁
+    
+    Example:
+        >>> storage = InMemoryStorage()
+        >>> storage.set("key", "value")
+        True
+        >>> storage.get("key")
+        'value'
+    """
+    def __init__(self) -> None:
+        """初始化内存存储"""
         self._data: Dict[str, Any] = {}
         self._lock = threading.RLock()
     
     def get(self, key: str) -> Optional[Any]:
+        """获取值
+        
+        Args:
+            key: 键名
+            
+        Returns:
+            Optional[Any]: 值，不存在返回None
+        """
         with self._lock:
             return self._data.get(key)
     
     def set(self, key: str, value: Any) -> bool:
+        """设置值
+        
+        Args:
+            key: 键名
+            value: 值
+            
+        Returns:
+            bool: 是否成功
+        """
         with self._lock:
             self._data[key] = value
             return True
     
     def delete(self, key: str) -> bool:
+        """删除键
+        
+        Args:
+            key: 键名
+            
+        Returns:
+            bool: 是否存在并删除
+        """
         with self._lock:
             return bool(self._data.pop(key, None))
     
     def list_keys(self, prefix: str = "") -> List[str]:
+        """列出键
+        
+        Args:
+            prefix: 前缀过滤
+            
+        Returns:
+            List[str]: 键列表
+        """
         with self._lock:
             if prefix:
                 return [k for k in self._data.keys() if k.startswith(prefix)]

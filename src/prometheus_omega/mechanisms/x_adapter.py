@@ -63,16 +63,34 @@ class OmegaCompat:
 # ═══════════════════════════════════════════════════════════════
 
 class XMemoryAdapter:
-    """X系统Memory层适配器 - 带内存回退"""
+    """X系统Memory层适配器 - 带内存回退
     
-    def __init__(self):
+    适配X系统的Memory层机制:
+    - 13表SQLite结构
+    - FTS5全文搜索
+    - 向量支持(预留)
+    
+    内存回退: 当无法访问X源码时，使用内存字典存储。
+    
+    Attributes:
+        _store: X的SQLite存储(可能为None)
+        _memory_store: 内存回退存储
+        _store_config: 存储配置信息
+    
+    Example:
+        >>> adapter = XMemoryAdapter()
+        >>> entry_id = adapter.write("test content", importance=0.8)
+        >>> results = adapter.retrieve("test")
+    """
+    
+    def __init__(self) -> None:
+        """初始化适配器"""
         self._store = None
-        self._memory_store: Dict[str, dict] = {}  # 内存回退存储
+        self._memory_store: Dict[str, dict] = {}
         self._load_store()
     
-    def _load_store(self):
-        """加载X的SQLiteStore - 失败时使用内存回退"""
-        # 尝试从源码读取配置
+    def _load_store(self) -> None:
+        """加载X的存储配置"""
         self._store_class = None
         self._store_config = {
             "tables": 13,
@@ -82,14 +100,23 @@ class XMemoryAdapter:
         }
     
     def write(self, content: str, importance: float = 0.5, **kwargs) -> str:
-        """写入记忆 - 优先使用X存储，失败时使用内存回退"""
+        """写入记忆
+        
+        Args:
+            content: 内容
+            importance: 重要性 (0-1)
+            **kwargs: 其他参数
+            
+        Returns:
+            str: 写入的entry_id
+        """
         import uuid
         entry_id = str(uuid.uuid4())
         
         if self._store:
             return self._store.insert(content, importance=importance, **kwargs)
         
-        # 使用内存回退 - 诚实记录系统状态
+        # 内存回退
         self._memory_store[entry_id] = {
             "content": content,
             "importance": importance,
@@ -99,7 +126,15 @@ class XMemoryAdapter:
         return entry_id
     
     def retrieve(self, query: str, top_k: int = 5) -> list:
-        """检索记忆"""
+        """检索记忆
+        
+        Args:
+            query: 查询文本
+            top_k: 返回数量
+            
+        Returns:
+            list: 匹配结果
+        """
         if self._store:
             return self._store.search(query, top_k)
         
@@ -185,13 +220,28 @@ AUTONOMY_LEVELS = {
 # ═══════════════════════════════════════════════════════════════
 
 class XEvolutionAdapter:
-    """X系统Evolution层适配器"""
+    """X系统Evolution层适配器 - 遗传算法引擎
     
-    def __init__(self):
+    适配X系统的演化引擎:
+    - 遗传算法实现: 选择、交叉、变异
+    - 适应度评估
+    - 种群管理
+    
+    Attributes:
+        _engine: X的EvolutionEngine实例(可能为None)
+        _load_status: 加载状态
+    
+    Example:
+        >>> adapter = XEvolutionAdapter()
+        >>> best = adapter.evolve(population, fitness_fn)
+    """
+    
+    def __init__(self) -> None:
+        """初始化演化适配器"""
         self._engine = None
         self._load_engine()
     
-    def _load_engine(self):
+    def _load_engine(self) -> None:
         """加载X的EvolutionEngine"""
         try:
             import importlib.util

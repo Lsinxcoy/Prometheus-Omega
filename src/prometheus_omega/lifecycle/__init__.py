@@ -21,22 +21,46 @@ class ForgettingStrategy(Enum):
 
 
 class WeibullForgetting:
-    """Weibull遗忘 - 来自X系统#7
+    """Weibull遗忘曲线 - 来自X系统#7机制
     
-    5层参数:
-    - shape (k): 曲线形状
-    - scale (lambda): 尺度
-    - threshold: 遗忘阈值
-    - decay_rate: 衰减率
-    - min_importance: 最低重要性
+    实现基于Weibull分布的记忆衰减模型，模拟人脑遗忘机制。
+    5层参数控制遗忘曲线形状:
+    - shape (k): 控制曲线形状 (k<1早期快, k>1早期慢)
+    - scale (lambda): 尺度参数，控制半衰期
+    - threshold: 遗忘阈值，低于此值被遗忘
+    - decay_rate: 额外衰减率
+    - min_importance: 最低重要性保障
+    
+    Attributes:
+        shape: 形状参数k
+        scale: 尺度参数lambda(天)
+        threshold: 遗忘阈值
+        decay_rate: 衰减率
+        min_importance: 最低重要性
+    
+    Example:
+        >>> f = WeibullForgetting(shape=1.5, scale=30.0)
+        >>> f.get_retention(0)
+        1.0
+        >>> f.get_retention(30)  # 30天后
+        ~0.5
     """
     
     def __init__(self, 
-                 shape: float = 1.5,      # k
-                 scale: float = 30.0,     # lambda (天)
+                 shape: float = 1.5,      # k: 形状参数
+                 scale: float = 30.0,     # lambda: 尺度参数(天)
                  threshold: float = 0.1,
                  decay_rate: float = 0.05,
-                 min_importance: float = 0.1):
+                 min_importance: float = 0.1) -> None:
+        """初始化Weibull遗忘器
+        
+        Args:
+            shape: 形状参数k，控制曲线凸凹
+            scale: 尺度参数lambda，控制遗忘速度
+            threshold: 遗忘阈值
+            decay_rate: 额外衰减率
+            min_importance: 最低重要性
+        """
         self.shape = shape
         self.scale = scale
         self.threshold = threshold
@@ -44,7 +68,17 @@ class WeibullForgetting:
         self.min_importance = min_importance
     
     def calculate(self, days_since_access: int, initial_importance: float) -> float:
-        """计算当前重要性"""
+        """计算当前重要性
+        
+        使用Weibull分布: R(t) = e^(-(t/lambda)^k)
+        
+        Args:
+            days_since_access: 距上次访问的天数
+            initial_importance: 初始重要性
+            
+        Returns:
+            float: 当前重要性值
+        """
         if days_since_access == 0:
             return initial_importance
         

@@ -59,11 +59,28 @@ def verify_iron_law(content: str, min_quality: float = 0.5) -> bool:
 
 
 class ErrorHandler:
-    """统一错误处理器"""
+    """统一错误处理器 - 提供异常处理和输入验证
+    
+    Attributes:
+        提供静态方法处理错误和验证输入
+    
+    Example:
+        >>> result = ErrorHandler.handle_error(ValueError("test"), "context")
+        >>> print(result['error_type'])
+        'ValueError'
+    """
     
     @staticmethod
     def handle_error(error: Exception, context: str = "") -> dict:
-        """统一错误处理"""
+        """统一错误处理
+        
+        Args:
+            error: 异常对象
+            context: 错误上下文
+            
+        Returns:
+            dict: 错误信息字典
+        """
         import traceback
         return {
             "error_type": type(error).__name__,
@@ -74,7 +91,19 @@ class ErrorHandler:
     
     @staticmethod
     def validate_input(value: Any, expected_type: type, field_name: str) -> Any:
-        """输入验证"""
+        """输入验证
+        
+        Args:
+            value: 待验证值
+            expected_type: 期望类型
+            field_name: 字段名
+            
+        Returns:
+            Any: 验证通过返回原值
+            
+        Raises:
+            TypeError: 类型不匹配
+        """
         if not isinstance(value, expected_type):
             raise TypeError(f"{field_name} must be {expected_type.__name__}, got {type(value).__name__}")
         return value
