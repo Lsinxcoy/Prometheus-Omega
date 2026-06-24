@@ -485,7 +485,11 @@ class DriftDetector:
         mean_current = statistics.mean(self.history[-20:])  # 最近20个
         mean_baseline = statistics.mean(self.history[:-20]) if len(self.history) > 20 else mean_current
         
-        std_baseline = statistics.stdev(self.history[:-20]) if len(self.history) > 20 else 1.0
+        # 修复: 确保有足够数据计算stdev
+        if len(self.history[:-20]) >= 2:
+            std_baseline = statistics.stdev(self.history[:-20])
+        else:
+            std_baseline = 1.0
         
         # 计算漂移量
         drift_magnitude = abs(mean_current - mean_baseline)
