@@ -1,32 +1,32 @@
-import unittest
-
-"""测试 monitor 模块"""
-import pytest
+"""Monitor模块测试"""
 import sys
-import os
+sys.path.insert(0, 'src')
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+from prometheus_omega.monitor import HealthCheck
 
-from prometheus_omega import monitor
+def test_health_check():
+    """测试健康检查"""
+    hc = HealthCheck()
+    hc.register('test', lambda: True)
+    result = hc.check()
+    assert result == True
 
+def test_health_check_fail():
+    """测试健康检查失败"""
+    hc = HealthCheck()
+    hc.register('fail', lambda: False)
+    result = hc.check()
+    assert result == False
 
-class TestMonitor(unittest.TestCase):
-    """monitor模块测试"""
-    
-    def test_import(self):
-        """测试导入"""
-        assert monitor is not None
-    
-    def test_classes_exist(self):
-        """测试类存在"""
-        classes = [c for c in dir(monitor) if not c.startswith('_') and isinstance(getattr(monitor, c), type)]
-        assert len(classes) > 0, "No classes found"
-    
-    def test_basic_functionality(self):
-        """测试基本功能"""
-        # 这里添加具体的功能测试
-        pass
+def test_get_status():
+    """测试状态获取"""
+    hc = HealthCheck()
+    hc.register('ok', lambda: True)
+    status = hc.get_status()
+    assert 'ok' in status
 
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+if __name__ == '__main__':
+    test_health_check()
+    test_health_check_fail()
+    test_get_status()
+    print("✅ All Monitor tests passed!")

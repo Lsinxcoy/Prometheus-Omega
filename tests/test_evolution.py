@@ -1,32 +1,30 @@
-import unittest
-
-"""测试 evolution 模块"""
-import pytest
+"""Evolution模块测试"""
 import sys
-import os
+sys.path.insert(0, 'src')
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+from prometheus_omega.evolution import EvolutionEngine, EvolutionOutcome
 
-from prometheus_omega import evolution
+def test_evolution_engine():
+    """测试进化引擎"""
+    engine = EvolutionEngine(population_size=50)
+    assert engine.population_size == 50
+    assert engine.generation == 0
 
+def test_evolve():
+    """测试进化"""
+    engine = EvolutionEngine()
+    population = [1, 2, 3]
+    result = engine.evolve(population)
+    assert engine.generation == 1
 
-class TestEvolution(unittest.TestCase):
-    """evolution模块测试"""
-    
-    def test_import(self):
-        """测试导入"""
-        assert evolution is not None
-    
-    def test_classes_exist(self):
-        """测试类存在"""
-        classes = [c for c in dir(evolution) if not c.startswith('_') and isinstance(getattr(evolution, c), type)]
-        assert len(classes) > 0, "No classes found"
-    
-    def test_basic_functionality(self):
-        """测试基本功能"""
-        # 这里添加具体的功能测试
-        pass
+def test_evaluate_fitness():
+    """测试适应性评估"""
+    engine = EvolutionEngine()
+    score = engine.evaluate_fitness({})
+    assert 0 <= score <= 1
 
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+if __name__ == '__main__':
+    test_evolution_engine()
+    test_evolve()
+    test_evaluate_fitness()
+    print("✅ All Evolution tests passed!")

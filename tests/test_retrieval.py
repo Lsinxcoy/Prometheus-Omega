@@ -1,32 +1,29 @@
-import unittest
-
-"""测试 retrieval 模块"""
-import pytest
+"""Retrieval模块测试"""
 import sys
-import os
+sys.path.insert(0, 'src')
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+from prometheus_omega.retrieval import Retrieval, SearchResult
 
-from prometheus_omega import retrieval
+def test_retrieval_search():
+    """测试搜索"""
+    r = Retrieval()
+    results = r.search('query', top_k=10)
+    assert isinstance(results, list)
 
+def test_retrieval_query():
+    """测试向量查询"""
+    r = Retrieval()
+    results = r.query([0.1]*128, k=5)
+    assert isinstance(results, list)
 
-class TestRetrieval(unittest.TestCase):
-    """retrieval模块测试"""
-    
-    def test_import(self):
-        """测试导入"""
-        assert retrieval is not None
-    
-    def test_classes_exist(self):
-        """测试类存在"""
-        classes = [c for c in dir(retrieval) if not c.startswith('_') and isinstance(getattr(retrieval, c), type)]
-        assert len(classes) > 0, "No classes found"
-    
-    def test_basic_functionality(self):
-        """测试基本功能"""
-        # 这里添加具体的功能测试
-        pass
+def test_retrieval_index():
+    """测试索引"""
+    r = Retrieval()
+    r.index_document('doc1', 'content')
+    assert 'doc1' in r.index
 
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+if __name__ == '__main__':
+    test_retrieval_search()
+    test_retrieval_query()
+    test_retrieval_index()
+    print("✅ All Retrieval tests passed!")

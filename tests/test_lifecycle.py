@@ -1,32 +1,23 @@
-import unittest
-
-"""测试 lifecycle 模块"""
+"""Lifecycle模块测试"""
 import pytest
 import sys
-import os
+sys.path.insert(0, 'src')
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+from prometheus_omega.lifecycle import LifecycleManager
 
-from prometheus_omega import lifecycle
+def test_lifecycle_tick():
+    """测试tick方法"""
+    lm = LifecycleManager()
+    result = lm.tick()
+    assert result is not None
+    assert 'phase' in result
 
+def test_lifecycle_initialization():
+    """测试初始化"""
+    lm = LifecycleManager()
+    assert lm.phase is not None  # phase存在即可
 
-class TestLifecycle(unittest.TestCase):
-    """lifecycle模块测试"""
-    
-    def test_import(self):
-        """测试导入"""
-        assert lifecycle is not None
-    
-    def test_classes_exist(self):
-        """测试类存在"""
-        classes = [c for c in dir(lifecycle) if not c.startswith('_') and isinstance(getattr(lifecycle, c), type)]
-        assert len(classes) > 0, "No classes found"
-    
-    def test_basic_functionality(self):
-        """测试基本功能"""
-        # 这里添加具体的功能测试
-        pass
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+if __name__ == '__main__':
+    test_lifecycle_tick()
+    test_lifecycle_initialization()
+    print("✅ All Lifecycle tests passed!")

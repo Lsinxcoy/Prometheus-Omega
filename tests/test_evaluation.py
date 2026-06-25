@@ -1,32 +1,26 @@
-import unittest
-
-"""测试 evaluation 模块"""
+"""Evaluation模块测试"""
 import pytest
 import sys
-import os
+sys.path.insert(0, 'src')
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+from prometheus_omega.evaluation import Evaluator, EvalResult
 
-from prometheus_omega import evaluation
+def test_evaluator_evaluate():
+    """测试评估"""
+    ev = Evaluator()
+    result = ev.evaluate({})
+    assert isinstance(result, EvalResult)
+    assert 0 <= result.score <= 1
 
+def test_evaluator_add_metric():
+    """测试添加指标"""
+    ev = Evaluator()
+    def my_metric(c):
+        return 0.8
+    ev.add_metric('test_metric', my_metric)
+    assert 'test_metric' in ev.metrics
 
-class TestEvaluation(unittest.TestCase):
-    """evaluation模块测试"""
-    
-    def test_import(self):
-        """测试导入"""
-        assert evaluation is not None
-    
-    def test_classes_exist(self):
-        """测试类存在"""
-        classes = [c for c in dir(evaluation) if not c.startswith('_') and isinstance(getattr(evaluation, c), type)]
-        assert len(classes) > 0, "No classes found"
-    
-    def test_basic_functionality(self):
-        """测试基本功能"""
-        # 这里添加具体的功能测试
-        pass
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+if __name__ == '__main__':
+    test_evaluator_evaluate()
+    test_evaluator_add_metric()
+    print("✅ All Evaluation tests passed!")

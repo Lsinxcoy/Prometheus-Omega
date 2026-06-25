@@ -1,32 +1,35 @@
-import unittest
-
-"""测试 memory 模块"""
+"""Memory模块测试"""
 import pytest
 import sys
-import os
+sys.path.insert(0, 'src')
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+from prometheus_omega.memory import MinervaStore, KeyNode, Bank
 
-from prometheus_omega import memory
+def test_minerva_insert():
+    """测试插入"""
+    store = MinervaStore()
+    node = KeyNode(node_id='test', content='hello')
+    result = store.insert(node)
+    assert result == True
 
+def test_minerva_retrieve():
+    """测试检索"""
+    store = MinervaStore()
+    node = KeyNode(node_id='test', content='hello')
+    store.insert(node)
+    results = store.retrieve('test')
+    assert len(results) >= 1
 
-class TestMemory(unittest.TestCase):
-    """memory模块测试"""
-    
-    def test_import(self):
-        """测试导入"""
-        assert memory is not None
-    
-    def test_classes_exist(self):
-        """测试类存在"""
-        classes = [c for c in dir(memory) if not c.startswith('_') and isinstance(getattr(memory, c), type)]
-        assert len(classes) > 0, "No classes found"
-    
-    def test_basic_functionality(self):
-        """测试基本功能"""
-        # 这里添加具体的功能测试
-        pass
+def test_bank_operations():
+    """测试银行操作"""
+    bank = Bank()
+    bank.store('key', 'value')
+    assert bank.retrieve('key') == 'value'
+    assert bank.delete('key') == True
+    assert bank.retrieve('key') is None
 
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+if __name__ == '__main__':
+    test_minerva_insert()
+    test_minerva_retrieve()
+    test_bank_operations()
+    print("✅ All Memory tests passed!")

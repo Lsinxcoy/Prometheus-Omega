@@ -1,32 +1,28 @@
-import unittest
-
-"""测试 execution 模块"""
-import pytest
+"""Execution模块测试"""
 import sys
-import os
+sys.path.insert(0, 'src')
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+from prometheus_omega.execution import Executor
 
-from prometheus_omega import execution
+def test_executor_init():
+    """测试执行器初始化"""
+    ex = Executor(max_workers=4)
+    assert ex.max_workers == 4
 
+def test_execute():
+    """测试执行"""
+    ex = Executor()
+    result = ex.execute({'task': 'test'})
+    assert result is not None
 
-class TestExecution(unittest.TestCase):
-    """execution模块测试"""
-    
-    def test_import(self):
-        """测试导入"""
-        assert execution is not None
-    
-    def test_classes_exist(self):
-        """测试类存在"""
-        classes = [c for c in dir(execution) if not c.startswith('_') and isinstance(getattr(execution, c), type)]
-        assert len(classes) > 0, "No classes found"
-    
-    def test_basic_functionality(self):
-        """测试基本功能"""
-        # 这里添加具体的功能测试
-        pass
+def test_submit():
+    """测试提交"""
+    ex = Executor()
+    ex.submit({'task': 'test'})
+    assert len(ex.queue) == 1
 
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+if __name__ == '__main__':
+    test_executor_init()
+    test_execute()
+    test_submit()
+    print("✅ All Execution tests passed!")
