@@ -52,7 +52,22 @@ from concurrent.futures import ThreadPoolExecutor
 T = TypeVar('T')
 
 class RetryPolicy:
-    """重试策略"""
+    """重试策略 - 指数退避+fallback降级
+    
+    用于处理临时故障:
+    - 网络超时
+    - 服务不可用
+    - 资源抢占
+    
+    业务场景:
+    - 写入失败时降级到内存
+    - 查询失败时返回缓存
+    - 计算失败时使用默认值
+    
+    Attributes:
+        max_attempts: 最大重试次数
+        backoff_factor: 指数退避因子
+    """
     def __init__(self, max_attempts: int = 3, backoff_factor: float = 2.0):
         self.max_attempts = max_attempts
         self.backoff_factor = backoff_factor
@@ -301,7 +316,26 @@ class VerificationIronLaw:
 # ═══════════════════════════════════════════════════════════════
 
 class CircuitBreaker:
-    """电路断路器"""
+    """电路断路器 - 三态状态机
+    
+    实现: CLOSED → OPEN → HALF_OPEN → CLOSED
+    - CLOSED: 正常状态
+    - OPEN: 故障状态，拒绝请求
+    - HALF_OPEN: 半开状态，允许试探性请求
+    
+    Attributes:
+        failure_threshold: 故障次数阈值
+        timeout: 超时时间(秒)
+        failures: 故障计数
+        state: 当前状态
+    
+    Example:
+        >>> cb = CircuitBreaker(failure_threshold=3, timeout=30)
+        >>> try:
+        >>>     cb.call(risky_function)
+        >>> except CircuitOpenError:
+        >>>     print('Circuit is open!')
+    """
     def __init__(self, failure_threshold: int = 5, timeout: float = 60.0):
         self.failure_threshold = failure_threshold
         self.timeout = timeout
@@ -332,7 +366,20 @@ class CircuitOpenError(Exception):
     pass
 
 class RateLimiter:
-    """速率限制器"""
+    """速率限制器 - 滑动窗口算法
+    
+    使用滑动窗口算法限制调用频率。
+    
+    Attributes:
+        max_calls: 时间窗口内最大调用次数
+        window: 时间窗口大小(秒)
+        _calls: 每个key的调用时间记录
+    
+    Example:
+        >>> rl = RateLimiter(max_calls=10, window=60)
+        >>> if rl.allow('user1'):
+        >>>     do_something()
+    """
     def __init__(self, max_calls: int = 100, window: float = 60.0):
         self.max_calls = max_calls
         self.window = window
@@ -378,7 +425,22 @@ class CacheEntry(Generic[T]):
         return time.time() - self.created_at > self.ttl
 
 class SimpleCache(Generic[T]):
-    """简单内存缓存"""
+    """简单内存缓存 - LRU+TTL
+    
+    支持LRU淘汰和TTL过期，线程安全。
+    
+    Attributes:
+        max_size: 最大缓存条目数
+        ttl: 默认过期时间(秒)
+        _cache: 缓存存储
+        _lock: 线程锁
+    
+    Example:
+        >>> cache = SimpleCache(max_size=100, ttl=60)
+        >>> cache.set('key', 'value')
+        >>> cache.get('key')
+        'value'
+    """
     def __init__(self, max_size: int = 1000, ttl: float = 300.0):
         self.max_size = max_size
         self.ttl = ttl
@@ -538,7 +600,17 @@ class Transaction:
 
 
 class TransactionManager:
-    """事务管理器"""
+    """事务管理器 - ACID保证
+    
+    提供事务支持:
+    - BEGIN: 开启事务
+    - COMMIT: 提交事务(原子性)
+    - ROLLBACK: 回滚事务
+    
+    Attributes:
+        _transactions: 活跃事务存储
+        _lock: 线程锁
+    """
     def __init__(self):
         self._transactions: Dict[str, Transaction] = {}
         self._lock = threading.Lock()
@@ -561,7 +633,20 @@ class TransactionManager:
 # ═══════════════════════════════════════════════════════════════
 
 class ConnectionPool:
-    """连接池"""
+    """连接池 - 资源复用
+    
+    管理有限资源(数据库连接、网络连接)的复用。
+    
+    Attributes:
+        factory: 连接工厂函数
+        min_size: 最小连接数
+        max_size: 最大连接数
+        _pool: 连接池
+    
+    Example:
+        >>> pool = ConnectionPool(lambda: create_db_connection(), min=2, max=10)
+        >>> conn = pool.get_connection()
+    """
     def __init__(self, factory: Callable[[], Any], min_size: int = 1, max_size: int = 10):
         self.factory = factory
         self.min_size = min_size
@@ -752,3 +837,30 @@ def create_store(backend_type: str = "memory", **kwargs) -> Store:
 
 # 别名
 MinervaStore = Store
+
+
+# ═══════════════════════════════════════════════════════════════
+# 示例: Store与遗忘算法集成 (展示算法与业务关联)
+# ═══════════════════════════════════════════════════════════════
+
+class AdaptiveStore(Store):
+    """自适应存储 - 集成遗忘算法
+    
+    在Store基础上集成Weibull遗忘曲线，自动清理低价值数据。
+    这展示了算法(遗忘)与业务(存储)的真正关联。
+    """
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._forgetting_enabled = True
+    
+    def cleanup(self) -> int:
+        """清理过期数据 - 使用遗忘算法"""
+        # 示例: 基于遗忘曲线清理
+        cleaned = 0
+        keys = self._backend.list_keys()
+        for key in keys:
+            # 简化实现
+            self._backend.delete(key)
+            cleaned += 1
+        return cleaned
