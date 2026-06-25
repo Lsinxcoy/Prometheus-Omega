@@ -191,6 +191,27 @@ class EdgeType(Enum):
 
 # ===== 确定性规则引擎 =====
 @dataclass
+
+@dataclass
+class Edge:
+    """边连接 - 来自Z系统
+    
+    表示两个节点之间的连接关系
+    """
+    source: str           # 源节点ID
+    target: str           # 目标节点ID
+    weight: float = 1.0   # 连接权重
+    edge_type: str = "default"  # 边类型
+    veracity: float = 1.0 # 真实性
+    timestamp: float = 0.0
+    
+    def __post_init__(self):
+        if self.timestamp == 0.0:
+            import time
+            self.timestamp = time.time()
+
+
+
 class Rule:
     """规则定义"""
     rule_id: str
@@ -579,6 +600,43 @@ def create_rule_engine() -> DeterministicRuleEngine:
 def create_event_bus() -> EventBus:
     """创建事件总线"""
     return EventBus()
+
+
+@dataclass
+class EvolutionOutcome:
+    """进化结果"""
+    success: bool
+    new_capabilities: List[str] = field(default_factory=list)
+    energy_spent: float = 0.0
+    fitness_delta: float = 0.0
+
+
+@dataclass
+class KeyNode:
+    """关键节点"""
+    node_id: str
+    content: str
+    importance: float = 0.5
+    utility: float = 0.5
+    veracity: float = 0.5
+    timestamp: float = 0.0
+
+
+class CommunityNode:
+    """社区节点"""
+    def __init__(self, node_id: str, community_id: str):
+        self.node_id = node_id
+        self.community_id = community_id
+        self.connections = []
+
+
+class MemoryLayer:
+    """记忆层级"""
+    def __init__(self, name: str, capacity: int = 1000):
+        self.name = name
+        self.capacity = capacity
+        self._storage = {}
+
 
 # ═══════════════════════════════════════════════════════════════
 # 宪法机制 - 三铁律

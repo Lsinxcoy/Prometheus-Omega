@@ -1,3 +1,4 @@
+from prometheus_omega.foundation import MemoryLayer, Node
 """L3 Retrieval - 检索层
 
 整合XYZ机制:
@@ -12,6 +13,21 @@ from datetime import datetime, timezone
 import math
 
 
+
+@dataclass
+
+@dataclass
+class SearchHit:
+    """搜索命中"""
+    node_id: str
+    content: str
+    score: float
+    metadata: Dict[str, Any] = field(default_factory=dict)
+class SearchResults:
+    """搜索结果"""
+    results: List[Any] = field(default_factory=list)
+    query: str = ""
+    total: int = 0
 class RetrievalMethod(Enum):
     """检索方法"""
     SEMANTIC = "semantic"      # 语义向量

@@ -1,6 +1,8 @@
+from prometheus_omega.foundation import CommunityNode
 """L11 Ecosystem - 生态层 (Lotka-Volterra+EDRE+HarnessX)"""
 from dataclasses import dataclass, field
-from typing import List, Dict
+from typing import Any, Optional, Callable, List, Dict, Set, Tuple
+from typing import List, Dict, Optional
 import math, random
 
 

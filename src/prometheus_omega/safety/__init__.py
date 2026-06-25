@@ -5,6 +5,16 @@ from enum import Enum
 import re
 
 
+from enum import IntEnum
+
+class AlertLevel(IntEnum):
+    """告警级别 - 本地定义避免循环导入"""
+    DEBUG = 0
+    INFO = 1
+    WARNING = 2
+    ERROR = 3
+    CRITICAL = 4
+
 class SafetyLevel(Enum):
     SAFE = "safe"
     WARNING = "warning"

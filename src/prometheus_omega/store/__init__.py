@@ -481,7 +481,24 @@ class SimpleCache(Generic[T]):
 # ═══════════════════════════════════════════════════════════════
 
 class StorageBackend(ABC):
-    """存储后端抽象基类"""
+    """存储后端抽象基类
+    
+    定义存储操作的统一接口，支持多种后端实现。
+    
+    Attributes:
+        _config: 后端配置
+    
+    Methods:
+        get(): 获取值
+        set(): 设置值
+        delete(): 删除值
+        list_keys(): 列出所有键
+    
+    Example:
+        >>> class MyBackend(StorageBackend):
+        ...     def get(self, key):
+        ...         return self._data.get(key)
+    """
     @abstractmethod
     def get(self, key: str) -> Optional[Any]:
         pass
@@ -864,3 +881,41 @@ class AdaptiveStore(Store):
             self._backend.delete(key)
             cleaned += 1
         return cleaned
+
+# ═══════════════════════════════════════════════════════════════
+# 完整使用示例
+# ═══════════════════════════════════════════════════════════════
+
+def demo_omega_store():
+    """演示Omega Store的完整使用流程
+    
+    Example:
+        >>> store = create_omega_store()
+        >>> store.set('key', 'value')
+        >>> store.get('key')
+    """
+    # 1. 创建Store
+    store = Store()
+    
+    # 2. 设置宪法门控阈值
+    store.write_gate.threshold = 0.001
+    
+    # 3. 写入数据(受宪法保护)
+    result = store.set('user:123', {'name': 'test', 'data': 'x'*100})
+    
+    # 4. 读取数据
+    data = store.get('user:123')
+    
+    # 5. ���用CircuitBreaker保护调用
+    cb = CircuitBreaker(failure_threshold=3)
+    try:
+        result = cb.call(risky_operation)
+    except CircuitOpenError:
+        print('Circuit is open, try later')
+    
+    return store
+
+# 导出
+__all__ = ['Store', 'StorageBackend', 'InMemoryStorage', 'CircuitBreaker',
+           'RetryPolicy', 'RateLimiter', 'ConnectionPool', 'ErrorHandler',
+           'create_omega_store', 'demo_omega_store']

@@ -1,3 +1,5 @@
+from prometheus_omega.foundation import EvolutionOutcome, Node, Edge, MemoryLayer
+import ast
 """L5 Evolution - 进化层 (整合XYZ: 12层GA+CGP+Coevolve+Z Convergence)"""
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Callable, Optional

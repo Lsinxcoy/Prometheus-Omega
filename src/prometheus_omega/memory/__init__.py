@@ -1,3 +1,4 @@
+from prometheus_omega.foundation import KeyNode
 """L2 Memory - 记忆层
 
 整合XYZ机制:
@@ -6,7 +7,7 @@
 - Z: GraphMemory, FourNetworkMemory, 四网络(World/Experiences/Summaries/Beliefs)
 """
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Set
+from typing import Dict, List, Optional, Any, Set, Callable
 from datetime import datetime, timezone
 from enum import Enum
 import uuid
@@ -58,6 +59,32 @@ def verify_iron_law(content: str, min_quality: float = 0.5) -> bool:
     return len(content) >= 10
 
 
+
+@dataclass
+
+@dataclass
+
+@dataclass
+class EpisodeEvent:
+    """情节事件"""
+    event_id: str
+    timestamp: float
+    event_type: str
+    content: str
+    importance: float = 0.5
+class PersonalEvent:
+    """个人事件"""
+    event_id: str
+    event_type: str
+    timestamp: float
+    content: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+class Topic:
+    """主题"""
+    topic_id: str
+    name: str
+    keywords: List[str] = field(default_factory=list)
+    weight: float = 1.0
 class ErrorHandler:
     """统一错误处理器 - 提供异常处理和输入验证
     
