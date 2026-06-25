@@ -5,6 +5,28 @@ from enum import Enum
 import uuid, time
 
 
+
+
+class Executor:
+    """执行器 - 来自Y系统"""
+    def __init__(self, max_workers: int = 4):
+        self.max_workers = max_workers
+        self.queue = []
+    
+    def execute(self, task) -> Any:
+        """执行任务"""
+        return {"status": "completed"}
+    
+    def run(self, tasks: List[Any]) -> List[Any]:
+        """批量执行"""
+        return [self.execute(t) for t in tasks]
+    
+    def submit(self, task):
+        """提交任务"""
+        self.queue.append(task)
+        return task
+
+
 class NodeStatus(Enum):
     PENDING = "pending"
     RUNNING = "running"

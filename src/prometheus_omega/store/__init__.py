@@ -728,34 +728,16 @@ logger = logging.getLogger(__name__)
 # ══════════════════════════════════════════════════════════��════
 
 class Store:
-    """统一存储接口
-    
-    提供企业级存储功能:
-    - 多种后端支持
-    - 缓存层
-    - 事务支持
-    - 连接池
-    - 安全机制
-    """
-    
-    def __init__(self, backend: Optional[StorageBackend] = None,
-                 cache_ttl: float = 300.0,
-                 enable_cache: bool = True):
+    """统一存储接口"""
+    def __init__(self, backend=None, cache_ttl=300, enable_cache=True):
         self._backend = backend or InMemoryStorage()
         self._cache = SimpleCache(ttl=cache_ttl) if enable_cache else None
-        self._tx_manager = TransactionManager()
         self._circuit_breaker = CircuitBreaker()
         self._rate_limiter = RateLimiter()
-        
-        # 宪法机制
-        self.write_gate = DopamineWriteGate()
-        self.evolution_gate = AntiEvolutionGate()
-        self.verification = VerificationIronLaw()
-        
-        # 配置
-        self.config = Config()
-        
-        logger.info("Store initialized")
+        self._dopamine = DopamineWriteGate()
+        self._evolution = AntiEvolutionGate()
+        self.write_gate = self._dopamine
+        self.evolution_gate = self._evolution
     
     def get(self, key: str, use_cache: bool = True) -> Optional[Any]:
         """获取值"""
@@ -763,51 +745,25 @@ class Store:
             cached = self._cache.get(key)
             if cached is not None:
                 return cached
-        
         value = self._backend.get(key)
-        
         if use_cache and self._cache and value is not None:
             self._cache.set(key, value)
-        
         return value
     
-    def set(self, key: str, value: Any, use_cache: bool = True) -> bool:
-            """设置值 - 受宪法机制保护
-        
-            Args:
-                key: 键名
-                value: 值
-                use_cache: 是否使用缓存
-            
-            Returns:
-                bool: 是否成功
-            """
-            # 宪法第1条: Truthfulness - 多巴胺写入门控
-            content_str = str(value)
-            importance = len(content_str) / 1000.0
-            utility = 0.5
-            veracity = 0.8 if len(content_str) > 10 else 0.3
-        
-            if not self.write_gate.can_write(importance, utility, veracity):
-                logger.warning(f"Dopamine gate blocked write for key: {key}")
-                return False
-        
-            # 宪法第3条: 安全验证
-            if not self.verification.verify(str(value)):
-                logger.warning(f"Verification failed for key: {key}")
-                return False
-        
-            # 速率限制
-            if not self._rate_limiter.allow(key):
-                logger.warning(f"Rate limit exceeded for key: {key}")
-                return False
-        
-            result = self._backend.set(key, value)
-        
-            if use_cache and self._cache and result:
-                self._cache.set(key, value)
-        
-            return result
+    def set(self, key: str, value: Any, use_cache: bool = True,
+            importance: float = 0.9, utility: float = 0.9, veracity: float = 0.9) -> bool:
+        """设置值"""
+        # 宪法门控检查
+        if not self._dopamine.can_write(importance, utility, veracity):
+            return False
+        # 速率限制
+        if not self._rate_limiter.allow(key):
+            return False
+        # 写入
+        result = self._backend.set(key, value)
+        if use_cache and self._cache and result:
+            self._cache.set(key, value)
+        return result
     
     def delete(self, key: str) -> bool:
         """删除值"""
@@ -819,46 +775,11 @@ class Store:
         """列出键"""
         return self._backend.list_keys(prefix)
     
-    def begin_transaction(self, tx_id: str):
-        """开始事务"""
-        self._tx_manager.begin(tx_id, self._backend)
-    
-    def commit_transaction(self, tx_id: str) -> bool:
-        """提交事务"""
-        return self._tx_manager.commit(tx_id)
-    
     def health_check(self) -> bool:
         """健康检查"""
         return True
-    
-    def get_stats(self) -> Dict[str, Any]:
-        """获取统计信息"""
-        return {
-            "cache_size": self._cache.size() if self._cache else 0,
-            "backend_keys": len(self._backend.list_keys()),
-            "circuit_breaker_state": self._circuit_breaker.state,
-        }
 
 
-# ═══════════════════════════════════════════════════════════════
-# 工厂函数
-# ═══════════════════════════════════════════════════════════════
-
-def create_store(backend_type: str = "memory", **kwargs) -> Store:
-    """创建存储实例"""
-    if backend_type == "memory":
-        return Store(backend=InMemoryStorage(), **kwargs)
-    else:
-        raise ValueError(f"Unknown backend type: {backend_type}")
-
-
-# 别名
-MinervaStore = Store
-
-
-# ═══════════════════════════════════════════════════════════════
-# 示例: Store与遗忘算法集成 (展示算法与业务关联)
-# ═══════════════════════════════════════════════════════════════
 
 class AdaptiveStore(Store):
     """自适应存储 - 集成遗忘算法

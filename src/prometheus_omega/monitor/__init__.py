@@ -6,6 +6,28 @@ from enum import Enum
 import statistics, time
 
 
+
+
+class HealthCheck:
+    """健康检查"""
+    def __init__(self):
+        self._checks = {}
+    
+    def register(self, name: str, check_fn: Callable[[], bool]):
+        self._checks[name] = check_fn
+    
+    def check(self) -> bool:
+        for name, check_fn in self._checks.items():
+            try:
+                if not check_fn():
+                    return False
+            except:
+                return False
+        return True
+    
+    def get_status(self) -> Dict[str, bool]:
+        return {name: check_fn() for name, check_fn in self._checks.items()}
+
 class AlertLevel(Enum):
     INFO = "info"
     WARNING = "warning"

@@ -1749,35 +1749,98 @@ class InputSanitizer:
 # ═══════════════════════════════════════════════════════════════
 
 class DopamineWriteGate:
-    """第1铁律: 多巴胺写入门控"""
+    """多巴胺写入门控 - 3铁律之一
     
+    工作原理:
+    1. 接收节点的importance/utility/veracity分数
+    2. 计算质量分数 = importance * utility * veracity
+    3. 结合多巴胺水平判断是否允许写入
+    """
     def __init__(self, threshold: float = 0.3, min_dopamine: float = 0.2):
         self.threshold = threshold
         self.min_dopamine = min_dopamine
+        self.dopamine_level = 0.5
     
-    def can_write(self, importance: float, utility: float, veracity: float, dopamine: float) -> bool:
+    def set_dopamine(self, level: float):
+        """设置多巴胺水平"""
+        self.dopamine_level = max(0.0, min(1.0, level))
+    
+    def can_write(self, importance: float, utility: float, veracity: float, 
+                  dopamine: float = None) -> bool:
+        """判断是否可以写入
+        
+        Args:
+            importance: 重要性 (0-1)
+            utility: 实用性 (0-1)
+            veracity: 真实性 (0-1)
+            dopamine: 多巴胺水平，默认使用self.dopamine_level
+        
+        Returns:
+            bool: 是否允许写入
+        """
+        dop = dopamine if dopamine is not None else self.dopamine_level
+        if dop < self.min_dopamine:
+            return False
         quality = importance * utility * veracity
-        effective = quality * dopamine
-        return effective >= self.threshold and dopamine >= self.min_dopamine
+        return quality * dop >= self.threshold
     
-    def evaluate(self, content: str) -> dict:
-        return {
-            "length": len(content),
-            "has_quality": len(content.strip()) > 10
-        }
+    def should_write(self, node) -> bool:
+        """别名方法，用于与Z系统兼容"""
+        return self.can_write(
+            getattr(node, 'importance', 0.5),
+            getattr(node, 'utility', 0.5),
+            getattr(node, 'veracity', 0.5)
+        )
+
+
+
 
 
 class AntiEvolutionGate:
-    """第2铁律: 反演化门控"""
+    """反进化门控 - 3铁律之一
     
-    def __init__(self, min_eval_score: float = 0.7):
-        self.min_eval_score = min_eval_score
+    工作原理:
+    1. 检查能量使用比例不超过阈值
+    2. 检查效用变化不为负
+    3. 检查风险评分不超过阈值
+    """
+    def __init__(self, energy_threshold: float = 0.9, risk_threshold: float = 0.7):
+        self.energy_threshold = energy_threshold
+        self.risk_threshold = risk_threshold
     
-    def can_evolve(self, eval_result: float) -> bool:
-        return eval_result >= self.min_eval_score
+    def can_evolve(self, energy_used: float, total_energy: float = 1.0,
+                   utility_delta: float = 0.0, risk_score: float = 0.0) -> bool:
+        """判断是否可以进化
+        
+        Args:
+            energy_used: 已使用能量
+            total_energy: 总能量
+            utility_delta: 效用变化
+            risk_score: 风险评分
+        
+        Returns:
+            bool: 是否允许进化
+        """
+        energy_ratio = energy_used / max(total_energy, 0.001)
+        if energy_ratio > self.energy_threshold:
+            return False
+        if utility_delta < -0.1:
+            return False
+        if risk_score > self.risk_threshold:
+            return False
+        return True
     
-    def should_mutate(self, fitness: float, diversity: float) -> bool:
-        return fitness > 0.5 and diversity > 0.3
+    def should_evolve(self, evolution_candidate) -> bool:
+        """别名方法"""
+        return self.can_evolve(
+            getattr(evolution_candidate, 'energy_used', 0.0),
+            getattr(evolution_candidate, 'total_energy', 1.0),
+            getattr(evolution_candidate, 'utility_delta', 0.0),
+            getattr(evolution_candidate, 'risk_score', 0.0)
+        )
+
+
+
 
 
 class VerificationIronLaw:
